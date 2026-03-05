@@ -1,3 +1,4 @@
+{"issue_id":"gt-071h","label":"gt:improvement"}
 {"issue_id":"gt-0jj1l","label":"worker-lifecycle"}
 {"issue_id":"gt-16k","label":"reconciliation"}
 {"issue_id":"gt-16k","label":"zfc"}
@@ -24,6 +25,7 @@
 {"issue_id":"gt-6oio","label":"plugin:rebuild-gt"}
 {"issue_id":"gt-6oio","label":"result:success"}
 {"issue_id":"gt-6oio","label":"rig:gastown"}
+{"issue_id":"gt-7r3c","label":"gt:improvement"}
 {"issue_id":"gt-7w6cq","label":"desire-path"}
 {"issue_id":"gt-87s6","label":"plugin:rebuild-gt"}
 {"issue_id":"gt-87s6","label":"result:success"}
@@ -61,6 +63,7 @@
 {"issue_id":"gt-gastown-crew-max","label":"gt:agent"}
 {"issue_id":"gt-gastown-crew-mel","label":"gt:agent"}
 {"issue_id":"gt-gastown-crew-tom","label":"gt:agent"}
+{"issue_id":"gt-gastown-polecat-Toast","label":"gt:agent"}
 {"issue_id":"gt-gastown-polecat-capable","label":"gt:agent"}
 {"issue_id":"gt-gastown-polecat-cheedo","label":"gt:agent"}
 {"issue_id":"gt-gastown-polecat-coma","label":"gt:agent"}
@@ -68,6 +71,7 @@
 {"issue_id":"gt-gastown-polecat-dementus","label":"gt:agent"}
 {"issue_id":"gt-gastown-polecat-furiosa","label":"gt:agent"}
 {"issue_id":"gt-gastown-polecat-keeper","label":"gt:agent"}
+{"issue_id":"gt-gastown-polecat-max","label":"gt:agent"}
 {"issue_id":"gt-gastown-polecat-nux","label":"gt:agent"}
 {"issue_id":"gt-gastown-polecat-rictus","label":"gt:agent"}
 {"issue_id":"gt-gastown-polecat-slit","label":"gt:agent"}
@@ -95,7 +99,7 @@
 {"issue_id":"gt-j30x","label":"result:success"}
 {"issue_id":"gt-j30x","label":"rig:gastown"}
 {"issue_id":"gt-j30x","label":"type:plugin-run"}
-{"issue_id":"gt-j3cx","label":"idle:5"}
+{"issue_id":"gt-j3cx","label":"idle:3"}
 {"issue_id":"gt-l5js","label":"bug"}
 {"issue_id":"gt-l5js","label":"p1"}
 {"issue_id":"gt-l7uq","label":"zfc-violation"}
@@ -105,6 +109,7 @@
 {"issue_id":"gt-npatu9","label":"beads"}
 {"issue_id":"gt-npatu9","label":"cleanup"}
 {"issue_id":"gt-npatu9","label":"code-review"}
+{"issue_id":"gt-obp2","label":"test-coverage"}
 {"issue_id":"gt-oetc","label":"zfc"}
 {"issue_id":"gt-ohqi","label":"zfc-violation"}
 {"issue_id":"gt-olb4","label":"infrastructure"}
