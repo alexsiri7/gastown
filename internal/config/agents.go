@@ -138,17 +138,14 @@ type AgentPresetInfo struct {
 	// that needs to be acknowledged via tmux.
 	EmitsPermissionWarning bool `json:"emits_permission_warning,omitempty"`
 
-<<<<<<< HEAD
 	// HasTurnBoundaryDrain indicates the agent's hooks system drains the nudge
 	// queue on every turn boundary (like Claude's UserPromptSubmit hook). When
 	// false, a background nudge-poller process is started to periodically drain
 	// the queue and inject via tmux.
 	HasTurnBoundaryDrain bool `json:"has_turn_boundary_drain,omitempty"`
-=======
 	// ACP is the configuration for ACP (Agent Communication Protocol) support.
 	// nil means the agent does not support ACP.
 	ACP *ACPConfig `json:"acp,omitempty"`
->>>>>>> 9804cea6 (feat: Implement Agent Client Protocol (ACP))
 }
 
 // ACPConfig contains configuration for ACP (Agent Communication Protocol) support.
@@ -786,13 +783,6 @@ func RegisterAgentForTesting(name string, info AgentPresetInfo) {
 	globalRegistry.Agents[name] = &info
 }
 
-<<<<<<< HEAD
-=======
-// ResetHookInstallersForTesting clears all hook installer registrations.
-func ResetHookInstallersForTesting() {
-	hookInstallers = make(map[string]HookInstallerFunc)
-}
-
 // ResolveACPConfig determines the correct ACP configuration for an agent
 // given its name and the actual command binary. This handles custom agents
 // that use an ACP-compatible launcher like "opencode".
@@ -938,4 +928,3 @@ func GetACPConfigFromRuntime(rc *RuntimeConfig) *ACPConfig {
 	}
 	return nil
 }
->>>>>>> 9804cea6 (feat: Implement Agent Client Protocol (ACP))
