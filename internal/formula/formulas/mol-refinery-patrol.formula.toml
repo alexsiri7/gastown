@@ -591,7 +591,15 @@ If quality-review step set review_failed = true (grade below pass grade AND revi
 If any quality check or test FAILED:
 1. Diagnose: Is this a branch regression or pre-existing on the target branch?
 2. If branch caused it:
-   - Abort merge
+   - Abort merge (clean up temp branch)
+   - **WRITE FAILURE CONTEXT to the bead** so the next polecat can make a targeted fix:
+     ```bash
+     bd update <issue-id> --append-notes "MERGE REJECTION ($(date -u +%Y-%m-%dT%H:%M:%SZ)):
+     Branch: <branch>
+     Failure-Type: <tests|build|lint|typecheck>
+     Error: <first 500 chars of error output>
+     Polecat: <polecat-name>"
+     ```
    - **REOPEN the source issue** so it returns to the ready queue:
      ```bash
      bd update <issue-id> --status=open --assignee=""
@@ -603,17 +611,16 @@ If any quality check or test FAILED:
      Issue: <issue-id>
      Polecat: <polecat-name>
      Rig: <rig>
-     FailureType: quality-check
+     FailureType: <tests|build|lint|typecheck>
      Error: <failure description>"
      ```
    - Close the MR bead as rejected:
      ```bash
      bd close <mr-bead-id> --reason "Rejected: <failure description>"
      ```
-   - Delete the rejected branch (a new polecat will create a fresh one):
-     ```bash
-     git push origin --delete <polecat-branch>
-     ```
+   - **Keep the branch** — do NOT delete it. The next polecat can reuse the
+     branch to avoid redoing work. The branch contains all the original commits
+     plus any context the previous polecat built up.
    - Archive the MERGE_READY message
    - Skip to loop-check
 3. If pre-existing on the target branch:
@@ -628,10 +635,11 @@ If any quality check or test FAILED:
    - Proceed with the merge if the failure is pre-existing (not caused by the branch).
 
 **REJECTION CHECKLIST** (all required before skipping to loop-check):
+- [ ] Failure context written to bead (bd update --append-notes)
 - [ ] Source issue reopened (bd update <issue-id> --status=open --assignee="")
 - [ ] MERGE_FAILED notification sent to witness
 - [ ] MR bead closed with rejection reason
-- [ ] Rejected branch deleted from remote (except for code-review failures)
+- [ ] Branch preserved (NOT deleted — next polecat reuses it)
 - [ ] MERGE_READY mail archived
 
 **GATE REQUIREMENT**: You CANNOT proceed to merge-push without:
