@@ -334,8 +334,7 @@ func (c *RigConfigSyncCheck) Fix(ctx *CheckContext) error {
 		rigPath := filepath.Join(ctx.TownRoot, rigName)
 		mayorRigPath := filepath.Join(rigPath, "mayor", "rig")
 
-		// Run bd init --prefix <prefix> --force to create the database
-		// bd v0.60.0+ requires --destroy-token for non-interactive --force
+		// Run bd init --prefix <prefix> --force --destroy-token to create the database
 		destroyToken := fmt.Sprintf("DESTROY-%s", entry.BeadsConfig.Prefix)
 		cmd := exec.Command("bd", "init", "--prefix", entry.BeadsConfig.Prefix, "--force", "--destroy-token="+destroyToken)
 		cmd.Dir = mayorRigPath

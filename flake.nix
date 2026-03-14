@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    beads.url = "github:GraemeF/beads/fix/go-1.25.8-devshell";
+    beads.url = "github:steveyegge/beads";
   };
 
   outputs =
