@@ -16,6 +16,7 @@ const (
 	RoleWitness  Role = "witness"
 	RoleRefinery Role = "refinery"
 	RoleCrew     Role = "crew"
+	RoleSRE      Role = "sre"
 	RolePolecat  Role = "polecat"
 	RoleDog      Role = "dog"
 )
@@ -61,6 +62,8 @@ func ParseAddress(address string) (*AgentIdentity, error) {
 			return &AgentIdentity{Role: RoleWitness, Rig: rig, Prefix: prefix}, nil
 		case string(RoleRefinery):
 			return &AgentIdentity{Role: RoleRefinery, Rig: rig, Prefix: prefix}, nil
+		case string(RoleSRE):
+			return &AgentIdentity{Role: RoleSRE, Rig: rig, Prefix: prefix}, nil
 		case string(RoleCrew), "polecats":
 			return nil, fmt.Errorf("invalid address %q", address)
 		default:
@@ -156,6 +159,11 @@ func ParseSessionNameWithRegistry(session string, registry *PrefixRegistry) (*Ag
 		return &AgentIdentity{Role: RoleRefinery, Rig: rig, Prefix: prefix}, nil
 	}
 
+	// Check for SRE (suffix marker)
+	if rest == string(RoleSRE) {
+		return &AgentIdentity{Role: RoleSRE, Rig: rig, Prefix: prefix}, nil
+	}
+
 	// Check for crew (marker in rest)
 	if strings.HasPrefix(rest, "crew-") {
 		name := rest[5:] // len("crew-") = 5
@@ -189,6 +197,8 @@ func (a *AgentIdentity) SessionName() string {
 		return WitnessSessionName(a.prefix())
 	case RoleRefinery:
 		return RefinerySessionName(a.prefix())
+	case RoleSRE:
+		return SRESessionName(a.prefix())
 	case RoleCrew:
 		return CrewSessionName(a.prefix(), a.Name)
 	case RolePolecat:
@@ -232,6 +242,8 @@ func (a *AgentIdentity) BeaconAddress() string {
 		return BeaconRecipient("witness", "", a.Rig)
 	case RoleRefinery:
 		return BeaconRecipient("refinery", "", a.Rig)
+	case RoleSRE:
+		return BeaconRecipient("sre", "", a.Rig)
 	case RoleCrew:
 		return BeaconRecipient("crew", a.Name, a.Rig)
 	case RolePolecat:
@@ -263,6 +275,8 @@ func (a *AgentIdentity) Address() string {
 		return fmt.Sprintf("%s/witness", a.Rig)
 	case RoleRefinery:
 		return fmt.Sprintf("%s/refinery", a.Rig)
+	case RoleSRE:
+		return fmt.Sprintf("%s/sre", a.Rig)
 	case RoleCrew:
 		return fmt.Sprintf("%s/crew/%s", a.Rig, a.Name)
 	case RolePolecat:

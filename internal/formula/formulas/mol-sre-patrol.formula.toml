@@ -1,0 +1,61 @@
+description = "Per-rig SRE/Buildcop health monitoring and deploy verification patrol.\n\nThe SRE is the infrastructure health monitor for your rig. You check health\nendpoints, verify containers are running, confirm deploy freshness, scan logs\nfor crash loops, and verify backup recency.\n\n**You do NOT do implementation work.** Your job is monitoring and alerting.\n\n## Design Philosophy\n\nThis patrol follows Gas Town principles:\n- **Discovery over tracking**: Observe reality each cycle\n- **Escalate, don't fix**: Report problems, don't attempt repairs\n- **Beads over mail**: Use beads for tracking, mail for escalation\n\n## Patrol Shape (Linear)\n\n```\ninbox-check ─► health-endpoints ─► container-status ─► deploy-freshness\n                                                            │\n         ┌──────────────────────────────────────────────────┘\n         ▼\n  log-scan ─► backup-check ─► status-report ─► context-check ─► loop-or-exit\n```"
+formula = 'mol-sre-patrol'
+version = 1
+
+[vars]
+[vars.wisp_type]
+description = "Type of wisp created for this molecule"
+default = "patrol"
+
+[[steps]]
+description = "Check inbox for messages and process them.\n\n**Step 0: Drain stale protocol messages**\n```bash\ngt mail drain --identity <rig>/sre --max-age 30m\n```\n\n**Step 1: Check inbox**\n```bash\ngt mail inbox\n```\n\nFor each message:\n\n**HANDOFF**: Read predecessor context. Continue from where they left off.\nArchive after absorbing context.\n\n**HELP / Escalation**: Read and act on infrastructure-related requests.\nArchive after handling.\n\n**Other**: Archive routine messages.\n\n**Hygiene**: Archive messages after processing. Inbox should be near-empty."
+id = 'inbox-check'
+title = 'Process SRE mail'
+
+[[steps]]
+description = "Verify application health endpoints respond correctly.\n\nCheck configured health endpoints for the rig's services:\n\n```bash\n# Check if any health endpoints are configured\n# Look for docker-compose.yml, .env, or rig config for service URLs\nls docker-compose.yml .env 2>/dev/null\n\n# Common health check patterns:\ncurl -sf http://localhost:8080/health 2>/dev/null && echo 'OK' || echo 'FAIL'\ncurl -sf http://localhost:3000/health 2>/dev/null && echo 'OK' || echo 'FAIL'\n```\n\nIf no health endpoints are configured, note this and continue.\n\n**On failure**: Record which endpoints failed and their error responses.\nDo NOT attempt to fix — escalate in the status-report step."
+id = 'health-endpoints'
+needs = ['inbox-check']
+title = 'Check health endpoints'
+
+[[steps]]
+description = "Verify containers are running and healthy.\n\n```bash\n# Check docker containers\ndocker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' 2>/dev/null\n\n# Check for containers in unhealthy state\ndocker ps --filter health=unhealthy --format '{{.Names}}: {{.Status}}' 2>/dev/null\n\n# Check for recently restarted containers (possible crash loop)\ndocker ps --format '{{.Names}}: {{.Status}}' 2>/dev/null | grep -i 'restarting'\n```\n\nIf docker is not available or no containers are running, note this and continue.\n\n**Record**: Container names, status, any unhealthy or restarting containers."
+id = 'container-status'
+needs = ['health-endpoints']
+title = 'Verify container status'
+
+[[steps]]
+description = "Check that the deployed SHA matches the latest main commit.\n\nThis detects stale deploys where main has advanced but the running\nservice hasn't been updated.\n\n```bash\n# Get the latest commit on main\ngit fetch origin main 2>/dev/null\ngit log origin/main -1 --format='%H %s'\n\n# Check deployed version (look for version files, build info endpoints, etc.)\n# Common patterns:\ncurl -sf http://localhost:8080/version 2>/dev/null\ncat VERSION 2>/dev/null\ncat .deployed-sha 2>/dev/null\n```\n\nIf deploy tracking is not configured, note this and continue.\n\n**Record**: Whether deploy is current, how many commits behind if stale."
+id = 'deploy-freshness'
+needs = ['container-status']
+title = 'Check deploy freshness'
+
+[[steps]]
+description = "Scan recent docker logs for crash loops, panics, or repeated errors.\n\n```bash\n# Check recent logs for error patterns (last 100 lines per container)\ndocker logs --tail 100 --since 1h $(docker ps -q) 2>/dev/null | \\\n  grep -iE 'panic|fatal|crash|oom|killed|segfault|error' | head -20\n\n# Check for high restart counts\ndocker inspect --format '{{.Name}}: {{.RestartCount}}' $(docker ps -aq) 2>/dev/null | \\\n  grep -v ': 0$'\n```\n\nIf no containers or docker not available, skip this step.\n\n**Record**: Any error patterns found, restart counts > 0."
+id = 'log-scan'
+needs = ['deploy-freshness']
+title = 'Scan logs for errors'
+
+[[steps]]
+description = "Verify backup freshness by checking backup directories and timestamps.\n\n```bash\n# Check common backup locations\nls -lt ~/backups/ 2>/dev/null | head -5\nls -lt /var/backups/ 2>/dev/null | head -5\n\n# Check Dolt backup status\ngt dolt status 2>/dev/null\n\n# Check if bd dolt push has been run recently\nbd dolt log --limit 5 2>/dev/null\n```\n\nNote the most recent backup timestamp and whether it's within acceptable\nfreshness window (typically < 24h).\n\n**Record**: Most recent backup time, freshness assessment."
+id = 'backup-check'
+needs = ['log-scan']
+title = 'Verify backup freshness'
+
+[[steps]]
+description = "Compile findings from all previous steps and report status.\n\nGenerate a summary of all checks:\n\n| Check | Status | Details |\n|-------|--------|---------|\n| Health endpoints | OK/FAIL | ... |\n| Containers | OK/WARN/FAIL | ... |\n| Deploy freshness | CURRENT/STALE | ... |\n| Log scan | CLEAN/WARN | ... |\n| Backups | FRESH/STALE | ... |\n\n**If any check is FAIL or critical**:\nEscalate to witness and mayor:\n```bash\ngt escalate -s HIGH \"SRE patrol: <summary of failures>\"\n```\n\n**If all checks pass**:\nLog a clean patrol. No escalation needed.\n\n**Persist findings to bead** (session survival):\n```bash\nbd update <patrol-wisp> --notes \"Patrol findings: <summary>\"\n```"
+id = 'status-report'
+needs = ['backup-check']
+title = 'Report status summary'
+
+[[steps]]
+description = "Check own context usage.\n\nIf context is HIGH (>80%):\n- Ensure any notes are written to handoff mail\n- Prepare for session restart\n\nIf context is LOW:\n- Can continue patrolling"
+id = 'context-check'
+needs = ['status-report']
+title = 'Check own context limit'
+
+[[steps]]
+description = "End of patrol cycle decision.\n\n**If context LOW** (can continue patrolling):\n\nResolve your agent bead ID for this patrol cycle:\n```bash\nbd list --type=agent --desc-contains=\"role_type: sre\" --json | jq -r '.[] | select(.status != \"closed\") | select(.description | test(\"(?m)^\\\\s*rig: <YOUR_RIG>\\\\s*$\")) | .id'\n```\n\nThen use await-signal with exponential backoff:\n```bash\ngt mol step await-signal --agent-bead YOUR_AGENT_BEAD \\\n  --backoff-base 30s --backoff-mult 2 --backoff-max 5m\n```\n\nAfter await-signal returns:\n1. Generate a brief summary of this patrol cycle\n2. Close current patrol and start next:\n```bash\ngt patrol report --summary \"<brief summary>\"\n```\n3. Continue from the first step of the new patrol cycle\n\n**If context HIGH** (approaching limit):\n1. Write handoff mail:\n```bash\ngt handoff -s \"SRE patrol handoff\" -m \"<observations>\"\n```\n2. Exit cleanly - the daemon will respawn a fresh SRE session"
+id = 'loop-or-exit'
+needs = ['context-check']
+title = 'Loop or exit for respawn'

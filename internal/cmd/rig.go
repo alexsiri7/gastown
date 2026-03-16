@@ -22,6 +22,7 @@ import (
 	"github.com/steveyegge/gastown/internal/hooks"
 	"github.com/steveyegge/gastown/internal/polecat"
 	"github.com/steveyegge/gastown/internal/refinery"
+	"github.com/steveyegge/gastown/internal/sre"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/style"
@@ -1512,6 +1513,25 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 		started = append(started, "refinery")
 	}
 
+	// 3. Start the SRE
+	sreSession := session.SRESessionName(session.PrefixFor(rigName))
+	sreRunning, _ := t.HasSession(sreSession)
+	if sreRunning {
+		skipped = append(skipped, "sre (already running)")
+	} else {
+		fmt.Printf("  Starting sre...\n")
+		sreMgr := sre.NewManager(r)
+		if err := sreMgr.Start(false, "", nil); err != nil {
+			if err == sre.ErrAlreadyRunning {
+				skipped = append(skipped, "sre (already running)")
+			} else {
+				return fmt.Errorf("starting sre: %w", err)
+			}
+		} else {
+			started = append(started, "sre")
+		}
+	}
+
 	// Report results
 	if len(started) > 0 {
 		fmt.Printf("%s Started: %s\n", style.Success.Render("✓"), strings.Join(started, ", "))
@@ -1601,6 +1621,26 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 			}
 		}
 
+		// 3. Start the SRE
+		sreSession := session.SRESessionName(session.PrefixFor(rigName))
+		sreRunning, _ := t.HasSession(sreSession)
+		if sreRunning {
+			skipped = append(skipped, "sre")
+		} else {
+			fmt.Printf("  Starting sre...\n")
+			sreMgr := sre.NewManager(r)
+			if err := sreMgr.Start(false, "", nil); err != nil {
+				if err == sre.ErrAlreadyRunning {
+					skipped = append(skipped, "sre")
+				} else {
+					fmt.Printf("  %s Failed to start sre: %v\n", style.Warning.Render("⚠"), err)
+					hasError = true
+				}
+			} else {
+				started = append(started, "sre")
+			}
+		}
+
 		// Report results for this rig
 		if len(started) > 0 {
 			fmt.Printf("  %s Started: %s\n", style.Success.Render("✓"), strings.Join(started, ", "))
@@ -1672,7 +1712,16 @@ func runRigShutdown(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 2. Stop the refinery
+	// 2. Stop the SRE
+	sreMgr := sre.NewManager(r)
+	if running, _ := sreMgr.IsRunning(); running {
+		fmt.Printf("  Stopping sre...\n")
+		if err := sreMgr.Stop(); err != nil {
+			errors = append(errors, fmt.Sprintf("sre: %v", err))
+		}
+	}
+
+	// 3. Stop the refinery
 	refMgr := refinery.NewManager(r)
 	if running, _ := refMgr.IsRunning(); running {
 		fmt.Printf("  Stopping refinery...\n")
@@ -1681,7 +1730,7 @@ func runRigShutdown(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// 3. Stop the witness
+	// 4. Stop the witness
 	witMgr := witness.NewManager(r)
 	if running, _ := witMgr.IsRunning(); running {
 		fmt.Printf("  Stopping witness...\n")
@@ -1794,6 +1843,17 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 		if err == nil && len(queue) > 0 {
 			fmt.Printf("  Queue: %d items\n", len(queue))
 		}
+	} else {
+		fmt.Printf("  %s stopped\n", style.Dim.Render("○"))
+	}
+	fmt.Println()
+
+	// SRE status
+	fmt.Printf("%s\n", style.Bold.Render("SRE"))
+	sreMgr := sre.NewManager(r)
+	sreRunning, _ := sreMgr.IsRunning()
+	if sreRunning {
+		fmt.Printf("  %s running\n", style.Success.Render("●"))
 	} else {
 		fmt.Printf("  %s stopped\n", style.Dim.Render("○"))
 	}
@@ -1923,7 +1983,16 @@ func runRigStop(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// 2. Stop the refinery
+		// 2. Stop the SRE
+		sreMgr := sre.NewManager(r)
+		if running, _ := sreMgr.IsRunning(); running {
+			fmt.Printf("  Stopping sre...\n")
+			if err := sreMgr.Stop(); err != nil {
+				errors = append(errors, fmt.Sprintf("sre: %v", err))
+			}
+		}
+
+		// 3. Stop the refinery
 		refMgr := refinery.NewManager(r)
 		if running, _ := refMgr.IsRunning(); running {
 			fmt.Printf("  Stopping refinery...\n")
@@ -1932,7 +2001,7 @@ func runRigStop(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// 3. Stop the witness
+		// 4. Stop the witness
 		witMgr := witness.NewManager(r)
 		if running, _ := witMgr.IsRunning(); running {
 			fmt.Printf("  Stopping witness...\n")
@@ -2025,7 +2094,16 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// 2. Stop the refinery
+		// 2. Stop the SRE
+		sreMgr := sre.NewManager(r)
+		if running, _ := sreMgr.IsRunning(); running {
+			fmt.Printf("    Stopping sre...\n")
+			if err := sreMgr.Stop(); err != nil {
+				stopErrors = append(stopErrors, fmt.Sprintf("sre: %v", err))
+			}
+		}
+
+		// 3. Stop the refinery
 		refMgr := refinery.NewManager(r)
 		if running, _ := refMgr.IsRunning(); running {
 			fmt.Printf("    Stopping refinery...\n")
@@ -2034,7 +2112,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// 3. Stop the witness
+		// 4. Stop the witness
 		witMgr := witness.NewManager(r)
 		if running, _ := witMgr.IsRunning(); running {
 			fmt.Printf("    Stopping witness...\n")
@@ -2089,6 +2167,25 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 				startErrors = append(startErrors, fmt.Sprintf("refinery: %v", err))
 			} else {
 				started = append(started, "refinery")
+			}
+		}
+
+		// 3. Start the SRE
+		sreSession := session.SRESessionName(session.PrefixFor(rigName))
+		sreRunning, _ := t.HasSession(sreSession)
+		if sreRunning {
+			skipped = append(skipped, "sre")
+		} else {
+			fmt.Printf("    Starting sre...\n")
+			if err := sreMgr.Start(false, "", nil); err != nil {
+				if err == sre.ErrAlreadyRunning {
+					skipped = append(skipped, "sre")
+				} else {
+					fmt.Printf("    %s Failed to start sre: %v\n", style.Warning.Render("⚠"), err)
+					startErrors = append(startErrors, fmt.Sprintf("sre: %v", err))
+				}
+			} else {
+				started = append(started, "sre")
 			}
 		}
 
