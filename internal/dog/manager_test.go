@@ -211,6 +211,50 @@ func TestSetupWorktreeBeads(t *testing.T) {
 	}
 }
 
+// TestSetupWorktreeBeadsConfigYAML verifies that setupWorktreeBeads creates a
+// config.yaml with dolt.idle-timeout: "0" so dogs don't auto-start local Dolt.
+func TestSetupWorktreeBeadsConfigYAML(t *testing.T) {
+	townRoot := t.TempDir()
+
+	rigName := "gastown"
+	rigBeadsDir := filepath.Join(townRoot, rigName, ".beads")
+	if err := os.MkdirAll(rigBeadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	dogName := "bravo"
+	worktreePath := filepath.Join(townRoot, "deacon", "dogs", dogName, rigName)
+	if err := os.MkdirAll(worktreePath, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	rigsConfig := &config.RigsConfig{
+		Version: 1,
+		Rigs: map[string]config.RigEntry{
+			rigName: {GitURL: "git@github.com:test/gastown.git"},
+		},
+	}
+	m := NewManager(townRoot, rigsConfig)
+
+	if err := m.setupWorktreeBeads(worktreePath, rigName); err != nil {
+		t.Fatalf("setupWorktreeBeads failed: %v", err)
+	}
+
+	// Verify config.yaml was created
+	configPath := filepath.Join(worktreePath, ".beads", "config.yaml")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("config.yaml not created: %v", err)
+	}
+
+	content := string(data)
+
+	// Must contain dolt.idle-timeout: "0" to prevent auto-starting local Dolt
+	if !strings.Contains(content, `dolt.idle-timeout: "0"`) {
+		t.Errorf("config.yaml missing dolt.idle-timeout, got:\n%s", content)
+	}
+}
+
 // TestAddTraversalName verifies Add rejects path traversal names.
 func TestAddTraversalName(t *testing.T) {
 	rigsConfig := &config.RigsConfig{
