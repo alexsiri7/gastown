@@ -19,7 +19,6 @@ import (
 	"github.com/steveyegge/gastown/internal/mail"
 	"github.com/steveyegge/gastown/internal/mayor"
 	"github.com/steveyegge/gastown/internal/polecat"
-	"github.com/steveyegge/gastown/internal/protocol"
 	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/session"
 	"github.com/steveyegge/gastown/internal/tmux"
@@ -265,7 +264,16 @@ func notifyRefineryMergeReady(workDir, rigName, polecatName, branch, issueID str
 
 	// Send MERGE_READY mail so the refinery's inbox-check can process it.
 	if router != nil {
-		msg := protocol.NewMergeReadyMessage(rigName, polecatName, branch, issueID)
+		body := fmt.Sprintf("Branch: %s\nIssue: %s\nPolecat: %s\nRig: %s\nVerified: clean git state, issue closed\n",
+			branch, issueID, polecatName, rigName)
+		msg := mail.NewMessage(
+			fmt.Sprintf("%s/witness", rigName),
+			fmt.Sprintf("%s/refinery", rigName),
+			fmt.Sprintf("MERGE_READY %s", polecatName),
+			body,
+		)
+		msg.Priority = mail.PriorityHigh
+		msg.Type = mail.TypeTask
 		if err := router.Send(msg); err != nil {
 			fmt.Fprintf(os.Stderr, "witness: failed to send MERGE_READY mail for %s: %v\n", polecatName, err)
 		}
@@ -1752,7 +1760,16 @@ func processDiscoveredCompletion(bd *BdCli, workDir, rigName string, payload *Po
 		// Send MERGE_READY mail and nudge refinery.
 		townRoot, _ := workspace.Find(workDir)
 		if router != nil {
-			msg := protocol.NewMergeReadyMessage(rigName, payload.PolecatName, payload.Branch, payload.IssueID)
+			body := fmt.Sprintf("Branch: %s\nIssue: %s\nPolecat: %s\nRig: %s\nVerified: clean git state, issue closed\n",
+				payload.Branch, payload.IssueID, payload.PolecatName, rigName)
+			msg := mail.NewMessage(
+				fmt.Sprintf("%s/witness", rigName),
+				fmt.Sprintf("%s/refinery", rigName),
+				fmt.Sprintf("MERGE_READY %s", payload.PolecatName),
+				body,
+			)
+			msg.Priority = mail.PriorityHigh
+			msg.Type = mail.TypeTask
 			if err := router.Send(msg); err != nil {
 				fmt.Fprintf(os.Stderr, "witness: failed to send MERGE_READY mail for %s: %v\n", payload.PolecatName, err)
 			}

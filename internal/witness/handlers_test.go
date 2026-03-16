@@ -1844,7 +1844,7 @@ func TestNotifyRefineryMergeReady_EmitsChannelEvent(t *testing.T) {
 
 	result := &HandlerResult{}
 	// notifyRefineryMergeReady takes workDir and calls workspace.Find(workDir) internally
-	notifyRefineryMergeReady(townRoot, "dashboard", "nux", "polecat/nux/gt-abc", "gt-abc", nil, result)
+	notifyRefineryMergeReady(townRoot, "dashboard", "nux", "polecat/nux/test", "gt-test", nil, result)
 
 	// Verify that a MERGE_READY event file was created in the refinery channel
 	eventDir := filepath.Join(townRoot, "events", "refinery")
