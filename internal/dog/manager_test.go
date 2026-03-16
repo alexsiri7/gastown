@@ -255,6 +255,54 @@ func TestSetupWorktreeBeadsConfigYAML(t *testing.T) {
 	}
 }
 
+// TestSetupWorktreeBeadsOverwritesWrongConfig verifies that setupWorktreeBeads
+// corrects an existing config.yaml that has wrong keys (e.g. auto_start: false)
+// instead of the required dolt.idle-timeout: "0".
+func TestSetupWorktreeBeadsOverwritesWrongConfig(t *testing.T) {
+	townRoot := t.TempDir()
+
+	rigName := "gastown"
+	rigBeadsDir := filepath.Join(townRoot, rigName, ".beads")
+	if err := os.MkdirAll(rigBeadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	dogName := "charlie"
+	worktreePath := filepath.Join(townRoot, "deacon", "dogs", dogName, rigName)
+	worktreeBeadsDir := filepath.Join(worktreePath, ".beads")
+	if err := os.MkdirAll(worktreeBeadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a config.yaml with the WRONG key (the bug: auto_start doesn't prevent Dolt)
+	wrongConfig := "auto_start: false\nprefix: gs\n"
+	if err := os.WriteFile(filepath.Join(worktreeBeadsDir, "config.yaml"), []byte(wrongConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	rigsConfig := &config.RigsConfig{
+		Version: 1,
+		Rigs: map[string]config.RigEntry{
+			rigName: {GitURL: "git@github.com:test/gastown.git"},
+		},
+	}
+	m := NewManager(townRoot, rigsConfig)
+
+	if err := m.setupWorktreeBeads(worktreePath, rigName); err != nil {
+		t.Fatalf("setupWorktreeBeads failed: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(worktreeBeadsDir, "config.yaml"))
+	if err != nil {
+		t.Fatalf("config.yaml not found: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, `dolt.idle-timeout: "0"`) {
+		t.Errorf("config.yaml still missing dolt.idle-timeout after overwrite, got:\n%s", content)
+	}
+}
+
 // TestAddTraversalName verifies Add rejects path traversal names.
 func TestAddTraversalName(t *testing.T) {
 	rigsConfig := &config.RigsConfig{

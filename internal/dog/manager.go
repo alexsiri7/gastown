@@ -227,12 +227,12 @@ func (m *Manager) setupWorktreeBeads(worktreePath, rigName string) error {
 		return fmt.Errorf("creating redirect file: %w", err)
 	}
 
-	// Ensure config.yaml exists with dolt.idle-timeout: "0" so bd connects to the
-	// shared Dolt server instead of auto-starting a local instance from an empty
-	// .beads/dolt directory. Without this, dogs spawn rogue Dolt processes that
-	// contend on port 3307 and crash the shared server.
+	// Always ensure config.yaml has dolt.idle-timeout: "0" so bd connects to the
+	// shared Dolt server instead of auto-starting a local instance. Use
+	// EnsureConfigYAML (not IfMissing) because an existing config.yaml may have
+	// wrong keys (e.g. "auto_start: false") that don't actually prevent auto-start.
 	prefix := beads.GetPrefixForRig(m.townRoot, rigName)
-	if err := beads.EnsureConfigYAMLIfMissing(worktreeBeadsDir, prefix); err != nil {
+	if err := beads.EnsureConfigYAML(worktreeBeadsDir, prefix); err != nil {
 		return fmt.Errorf("ensuring config.yaml: %w", err)
 	}
 
