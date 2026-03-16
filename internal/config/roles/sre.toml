@@ -1,0 +1,23 @@
+# SRE role definition
+# Per-rig health monitoring and deploy verification patrol. One per rig.
+
+role = "sre"
+scope = "rig"
+nudge = "Run 'gt prime' to check infrastructure status and begin patrol cycle."
+prompt_template = "sre.md.tmpl"
+
+[session]
+pattern = "{prefix}-sre"
+work_dir = "{town}/{rig}/sre"
+needs_pre_sync = false
+start_command = "exec claude --dangerously-skip-permissions"
+
+[env]
+GT_ROLE = "{rig}/sre"
+GT_SCOPE = "rig"
+
+[health]
+ping_timeout = "30s"
+consecutive_failures = 3
+kill_cooldown = "5m"
+stuck_threshold = "1h"
