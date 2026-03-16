@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/gofrs/flock"
 
+	"github.com/steveyegge/gastown/internal/beads"
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/git"
 	"github.com/steveyegge/gastown/internal/rig"
@@ -134,6 +136,12 @@ func (m *Manager) Add(name string) (*Dog, error) {
 			return nil, fmt.Errorf("creating worktree for rig %s: %w", rigName, err)
 		}
 		worktrees[rigName] = worktreePath
+
+		// Set up shared beads so the dog can reach the rig's beads server.
+		// Without this, bd in dog sessions tries to auto-start a local Dolt instance.
+		if err := m.setupWorktreeBeads(worktreePath, rigName); err != nil {
+			return nil, fmt.Errorf("setting up shared beads for rig %s: %w", rigName, err)
+		}
 	}
 
 	// Create initial state file
@@ -192,6 +200,41 @@ func (m *Manager) createRigWorktree(dogPath, dogName, rigName string) (string, e
 	}
 
 	return worktreePath, nil
+}
+
+// setupWorktreeBeads creates a .beads/redirect file so the dog worktree uses the rig's
+// shared beads database. Dog worktrees live under deacon/dogs/<name>/<rig>/, outside the
+// rig directory tree, so beads.SetupRedirect (which assumes worktrees are inside the rig)
+// cannot be used. Instead, we compute the redirect path directly using filepath.Rel.
+func (m *Manager) setupWorktreeBeads(worktreePath, rigName string) error {
+	rigBeadsPath := filepath.Join(m.townRoot, rigName, ".beads")
+
+	// Compute relative path from worktree to rig's .beads
+	relPath, err := filepath.Rel(worktreePath, rigBeadsPath)
+	if err != nil {
+		return fmt.Errorf("computing redirect path: %w", err)
+	}
+
+	// Create .beads directory in worktree
+	worktreeBeadsDir := filepath.Join(worktreePath, ".beads")
+	if err := os.MkdirAll(worktreeBeadsDir, 0755); err != nil {
+		return fmt.Errorf("creating .beads dir: %w", err)
+	}
+
+	// Write redirect file
+	redirectFile := filepath.Join(worktreeBeadsDir, "redirect")
+	if err := os.WriteFile(redirectFile, []byte(relPath+"\n"), 0644); err != nil {
+		return fmt.Errorf("creating redirect file: %w", err)
+	}
+
+	// Propagate beads git config so bd commands don't warn about missing role/prefix.
+	prefix := beads.GetPrefixForRig(m.townRoot, rigName)
+	if prefix != "" {
+		_ = exec.Command("git", "-C", worktreePath, "config", "beads.issue-prefix", prefix).Run()
+	}
+	_ = exec.Command("git", "-C", worktreePath, "config", "beads.role", "contributor").Run()
+
+	return nil
 }
 
 // findRepoBase locates the git repo base for a rig.
@@ -468,6 +511,11 @@ func (m *Manager) Refresh(name string) error {
 			return fmt.Errorf("creating worktree for %s: %w", rigName, err)
 		}
 
+		// Re-establish shared beads redirect for the fresh worktree.
+		if err := m.setupWorktreeBeads(worktreePath, rigName); err != nil {
+			style.PrintWarning("could not set up shared beads for %s: %v", rigName, err)
+		}
+
 		// Persist state after each rig so completed rigs aren't lost on
 		// a later failure.
 		state.Worktrees[rigName] = worktreePath
@@ -540,6 +588,11 @@ func (m *Manager) RefreshRig(name, rigName string) error {
 		state.UpdatedAt = time.Now()
 		_ = m.saveState(name, state)
 		return fmt.Errorf("creating worktree: %w", err)
+	}
+
+	// Re-establish shared beads redirect for the fresh worktree.
+	if err := m.setupWorktreeBeads(worktreePath, rigName); err != nil {
+		style.PrintWarning("could not set up shared beads for %s: %v", rigName, err)
 	}
 
 	// Update state
