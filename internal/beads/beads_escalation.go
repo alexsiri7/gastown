@@ -186,6 +186,10 @@ func (b *Beads) CreateEscalationBead(title string, fields *EscalationFields) (*I
 	// Uses getActor() to respect isolated mode (tests)
 	if actor := b.getActor(); actor != "" {
 		args = append(args, "--actor="+actor)
+		// Prevent actor-based prefix inference (gs-plz).
+		if prefix := DetectPrefix(b.getResolvedBeadsDir()); prefix != "" {
+			args = append(args, "--prefix="+prefix)
+		}
 	}
 
 	out, err := b.run(args...)

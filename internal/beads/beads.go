@@ -1118,6 +1118,12 @@ func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 	}
 	if actor != "" {
 		args = append(args, "--actor="+actor)
+		// When --actor is set, bd may infer the prefix from the actor's rig
+		// instead of the target database. Explicitly set --prefix to match the
+		// target beads directory to prevent prefix/database mismatch (gs-plz).
+		if prefix := DetectPrefix(b.getResolvedBeadsDir()); prefix != "" {
+			args = append(args, "--prefix="+prefix)
+		}
 	}
 
 	out, err := b.run(args...)

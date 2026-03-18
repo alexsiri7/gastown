@@ -1123,6 +1123,14 @@ func (r *Router) sendToSingle(msg *Message) error {
 	// Add actor for attribution (sender identity)
 	args = append(args, "--actor", msg.From)
 
+	// Explicitly set --prefix to match the target database. Without this,
+	// bd infers the prefix from --actor (e.g., "reli/dogs/bark-dog" → "re-"),
+	// which creates IDs with the wrong prefix in the HQ database (gs-plz).
+	beadsDir := r.resolveBeadsDir()
+	if prefix := beads.DetectPrefix(beadsDir); prefix != "" {
+		args = append(args, "--prefix", prefix)
+	}
+
 	// Do NOT pass --id to bd create. The msg.ID (msg-xxx prefix) is for
 	// in-memory tracking only. bd auto-generates IDs with the correct
 	// database prefix (e.g., hq-wisp-xxx). Passing --id causes prefix
@@ -1136,8 +1144,6 @@ func (r *Router) sendToSingle(msg *Message) error {
 	// End flag parsing with --, then add subject as positional argument.
 	// This prevents subjects like "--help" or "--json" from being parsed as flags.
 	args = append(args, "--", msg.Subject)
-
-	beadsDir := r.resolveBeadsDir()
 	if err := r.ensureCustomTypes(beadsDir); err != nil {
 		return err
 	}
@@ -1267,6 +1273,12 @@ func (r *Router) sendToQueue(msg *Message) error {
 	// Add actor for attribution (sender identity)
 	args = append(args, "--actor", msg.From)
 
+	// Explicitly set --prefix to match the target database (gs-plz).
+	beadsDir := r.resolveBeadsDir()
+	if prefix := beads.DetectPrefix(beadsDir); prefix != "" {
+		args = append(args, "--prefix", prefix)
+	}
+
 	// Queue messages are never ephemeral - they need to persist until claimed
 	// (deliberately not checking shouldBeWisp)
 
@@ -1274,7 +1286,6 @@ func (r *Router) sendToQueue(msg *Message) error {
 	args = append(args, "--", msg.Subject)
 
 	// Queue messages go to town-level beads (shared location)
-	beadsDir := r.resolveBeadsDir()
 	if err := r.ensureCustomTypes(beadsDir); err != nil {
 		return err
 	}
@@ -1351,6 +1362,12 @@ func (r *Router) sendToAnnounce(msg *Message) error {
 	// Add actor for attribution (sender identity)
 	args = append(args, "--actor", msg.From)
 
+	// Explicitly set --prefix to match the target database (gs-plz).
+	beadsDir := r.resolveBeadsDir()
+	if prefix := beads.DetectPrefix(beadsDir); prefix != "" {
+		args = append(args, "--prefix", prefix)
+	}
+
 	// Announce messages are never ephemeral - they need to persist for readers
 	// (deliberately not checking shouldBeWisp)
 
@@ -1358,7 +1375,6 @@ func (r *Router) sendToAnnounce(msg *Message) error {
 	args = append(args, "--", msg.Subject)
 
 	// Announce messages go to town-level beads (shared location)
-	beadsDir := r.resolveBeadsDir()
 	if err := r.ensureCustomTypes(beadsDir); err != nil {
 		return err
 	}
@@ -1437,6 +1453,12 @@ func (r *Router) sendToChannel(msg *Message) error {
 	// Add actor for attribution (sender identity)
 	args = append(args, "--actor", msg.From)
 
+	// Explicitly set --prefix to match the target database (gs-plz).
+	beadsDir := r.resolveBeadsDir()
+	if prefix := beads.DetectPrefix(beadsDir); prefix != "" {
+		args = append(args, "--prefix", prefix)
+	}
+
 	// Channel messages are never ephemeral - they persist according to retention policy
 	// (deliberately not checking shouldBeWisp)
 
@@ -1444,7 +1466,6 @@ func (r *Router) sendToChannel(msg *Message) error {
 	args = append(args, "--", msg.Subject)
 
 	// Channel messages go to town-level beads (shared location)
-	beadsDir := r.resolveBeadsDir()
 	if err := r.ensureCustomTypes(beadsDir); err != nil {
 		return err
 	}

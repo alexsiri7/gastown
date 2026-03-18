@@ -384,6 +384,13 @@ func ensureDatabaseInitialized(beadsDir string) error {
 // will silently use "gt" instead. Fixing this would require walking up the
 // directory tree to resolve the actual rig name, which is out of scope for
 // this crash-prevention guard.
+// DetectPrefix returns the beads prefix for the given beads directory.
+// It checks rigs.json first, then config.yaml, defaulting to "gt".
+// The returned prefix has no trailing hyphen (e.g., "hq" not "hq-").
+func DetectPrefix(beadsDir string) string {
+	return detectPrefix(beadsDir)
+}
+
 func detectPrefix(beadsDir string) string {
 	// 1. Try authoritative source: rigs.json via town root
 	rigDir := filepath.Dir(beadsDir)
