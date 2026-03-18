@@ -5,7 +5,7 @@ version = 1
 
 [gate]
 type = "cooldown"
-duration = "5m"
+duration = "10m"
 
 [tracking]
 labels = ["plugin:stuck-agent-dog", "category:health"]
@@ -92,10 +92,31 @@ A polecat is a concern if:
 - It has hooked work (hook_bead is set)
 - Its tmux session is dead OR the agent process is dead
 
+**IMPORTANT: bead-not-found is NOT an infrastructure failure.** When `bd show`
+returns "no issue found" or empty output, this means the referenced bead was
+garbage-collected (orphaned/stale data). This is normal and expected. Do NOT
+escalate bead-not-found as a Dolt infrastructure failure. Simply skip the
+polecat as if it has no hooked work.
+
 ```bash
 CRASHED=()
 STUCK=()
 HEALTHY=0
+STALE_BEADS=0
+
+# Helper: query agent bead and extract a field. Returns empty string on
+# bead-not-found (orphaned/GC'd bead) — this is normal, NOT an error.
+get_agent_field() {
+  local agent_path="$1" field="$2"
+  local raw
+  raw=$(bd show "$agent_path" --json 2>/dev/null) || true
+  # bd may return non-JSON ("No issues found.") for GC'd beads — treat as empty
+  if [ -z "$raw" ] || ! echo "$raw" | jq empty 2>/dev/null; then
+    echo ""
+    return
+  fi
+  echo "$raw" | jq -r ".$field // empty" 2>/dev/null || echo ""
+}
 
 while IFS='|' read -r RIG PREFIX; do
   [ -z "$RIG" ] && continue
@@ -112,19 +133,20 @@ while IFS='|' read -r RIG PREFIX; do
     # Check if session exists
     if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
       # Session dead — check if it has hooked work
-      HOOK_BEAD=$(bd show "$RIG/polecats/$PCAT_NAME" --json 2>/dev/null \
-        | jq -r '.hook_bead // empty' 2>/dev/null)
+      HOOK_BEAD=$(get_agent_field "$RIG/polecats/$PCAT_NAME" "hook_bead")
 
       if [ -n "$HOOK_BEAD" ]; then
         # Check agent_state to avoid interfering with active spawning
-        AGENT_STATE=$(bd show "$RIG/polecats/$PCAT_NAME" --json 2>/dev/null \
-          | jq -r '.agent_state // empty' 2>/dev/null)
+        AGENT_STATE=$(get_agent_field "$RIG/polecats/$PCAT_NAME" "agent_state")
         if [ "$AGENT_STATE" = "spawning" ]; then
           echo "  SKIP $SESSION_NAME: agent_state=spawning (sling in progress)"
           continue
         fi
         CRASHED+=("$SESSION_NAME|$RIG|$PCAT_NAME|$HOOK_BEAD")
         echo "  CRASHED: $SESSION_NAME (hook=$HOOK_BEAD)"
+      else
+        # Empty hook — could be bead-not-found (stale) or genuinely unhooked
+        echo "  OK $SESSION_NAME: no hook (session dead, no work assigned)"
       fi
     else
       # Session alive — check for agent process liveness
@@ -138,8 +160,7 @@ while IFS='|' read -r RIG PREFIX; do
         AGENT_ALIVE=$(pgrep -P "$PANE_PID" -f 'claude|node|anthropic' 2>/dev/null | head -1)
         if [ -z "$AGENT_ALIVE" ]; then
           # Agent process dead but session alive — zombie session
-          HOOK_BEAD=$(bd show "$RIG/polecats/$PCAT_NAME" --json 2>/dev/null \
-            | jq -r '.hook_bead // empty' 2>/dev/null)
+          HOOK_BEAD=$(get_agent_field "$RIG/polecats/$PCAT_NAME" "hook_bead")
           if [ -n "$HOOK_BEAD" ]; then
             STUCK+=("$SESSION_NAME|$RIG|$PCAT_NAME|$HOOK_BEAD|agent_dead")
             echo "  ZOMBIE: $SESSION_NAME (agent dead, session alive, hook=$HOOK_BEAD)"
@@ -224,6 +245,12 @@ For DEACON stuck (stale heartbeat):
 2. If agent shows recent activity in pane → nudge first, check again next cycle
 3. If agent has been stuck for >15 minutes with no pane activity → restart
 4. If mass death detected (>3 crashes in same cycle) → escalate, don't restart
+
+**CRITICAL: bead-not-found is NOT a Dolt failure.** If `bd show` returns "no issue
+found" or "not found", the bead was garbage-collected. This is normal housekeeping.
+Do NOT escalate this as a Dolt infrastructure failure. Simply treat it as "no hooked
+work" and skip the agent. Only escalate when Dolt itself is unreachable (connection
+refused, timeout, server error).
 
 ## Step 5: Take action
 

@@ -21,6 +21,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -268,7 +269,10 @@ func copyAuxiliaryData(workDir string, result *MigrateWispsResult) error {
 // deriveDBName extracts the database name from the workDir relative to townRoot.
 // For the town root itself, returns "hq". For rig directories, returns the rig name.
 func deriveDBName(townRoot, workDir string) string {
-	// Normalize paths
+	// Normalize paths to handle trailing slashes, double slashes, etc.
+	townRoot = filepath.Clean(townRoot)
+	workDir = filepath.Clean(workDir)
+
 	if townRoot == workDir {
 		return "hq"
 	}
@@ -282,6 +286,12 @@ func deriveDBName(townRoot, workDir string) string {
 	}
 	if rel == "" {
 		return ""
+	}
+	// Guard: if the derived name equals the town root basename, workDir was
+	// the town root with a different path representation (e.g., symlink).
+	// Return "hq" instead of the misleading basename (e.g., "gt").
+	if rel == filepath.Base(townRoot) {
+		return "hq"
 	}
 	return rel
 }
