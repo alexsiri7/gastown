@@ -395,9 +395,16 @@ func detectPrefix(beadsDir string) string {
 	// 1. Try authoritative source: rigs.json via town root
 	rigDir := filepath.Dir(beadsDir)
 	if townRoot := FindTownRoot(rigDir); townRoot != "" {
-		rigName := filepath.Base(rigDir)
-		if prefix := config.GetRigPrefix(townRoot, rigName); prefix != "" && prefixRe.MatchString(prefix) {
-			return prefix
+		// When beadsDir is at the town root (rigDir == townRoot), this is the
+		// HQ database — not a rig. Skip rigs.json lookup and fall through to
+		// config.yaml which has the correct prefix (e.g., "hq"). Without this
+		// guard, GetRigPrefix returns the "gt" fallback because the town root
+		// base name is never a key in rigs.json (gs-a9x).
+		if rigDir != townRoot {
+			rigName := filepath.Base(rigDir)
+			if prefix := config.GetRigPrefix(townRoot, rigName); prefix != "" && prefixRe.MatchString(prefix) {
+				return prefix
+			}
 		}
 	}
 

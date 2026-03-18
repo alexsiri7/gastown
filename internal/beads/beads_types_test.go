@@ -744,6 +744,30 @@ func TestDetectPrefix(t *testing.T) {
 		}
 	})
 
+	t.Run("town root beads uses config.yaml prefix not rigs.json fallback", func(t *testing.T) {
+		// When beadsDir is at the town root (HQ database), detectPrefix should
+		// read the prefix from config.yaml (e.g., "hq"), NOT use the "gt"
+		// fallback from GetRigPrefix. The town root is not a rig (gs-a9x).
+		townDir := t.TempDir()
+		mayorDir := filepath.Join(townDir, "mayor")
+		os.MkdirAll(mayorDir, 0755)
+		os.WriteFile(filepath.Join(mayorDir, "town.json"), []byte("{}"), 0644)
+
+		// rigs.json has rigs but NOT an entry for the town root base name
+		rigsJSON := `{"rigs": {"reli": {"beads": {"prefix": "re"}}}}`
+		os.WriteFile(filepath.Join(mayorDir, "rigs.json"), []byte(rigsJSON), 0644)
+
+		// HQ beads at town root with config.yaml prefix "hq"
+		beadsDir := filepath.Join(townDir, ".beads")
+		os.MkdirAll(beadsDir, 0755)
+		os.WriteFile(filepath.Join(beadsDir, "config.yaml"), []byte("prefix: hq\n"), 0644)
+
+		got := detectPrefix(beadsDir)
+		if got != "hq" {
+			t.Errorf("detectPrefix() for town root .beads = %q, want %q", got, "hq")
+		}
+	})
+
 	t.Run("routed path falls back to default", func(t *testing.T) {
 		// Routed beads path: mayor/rig/.beads — filepath.Base(filepath.Dir)
 		// yields "rig", not the actual rig name. Should fall back to "gt".
