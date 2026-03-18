@@ -238,7 +238,23 @@ func (d *Daemon) dispatchPlugins(mgr *dog.Manager, sm *dog.SessionManager, rigsC
 	recorder := plugin.NewRecorder(d.config.TownRoot)
 	router := mail.NewRouterWithTownRoot(d.config.TownRoot, d.config.TownRoot)
 
+	// Load plugin settings for per-rig enable/disable overrides.
+	pluginSettings, err := plugin.LoadPluginSettings(d.config.TownRoot)
+	if err != nil {
+		d.logger.Printf("Handler: failed to load plugin settings: %v", err)
+		// Continue with no overrides — frontmatter defaults apply.
+		pluginSettings = &plugin.PluginSettings{
+			Overrides: make(map[string]map[string]bool),
+		}
+	}
+
 	for _, p := range plugins {
+		// Check if plugin is enabled (override > frontmatter > default true).
+		if !pluginSettings.IsEnabled(p.Name, p.RigName, p.Enabled) {
+			d.logger.Printf("Handler: plugin %s disabled for rig %s, skipping", p.Name, p.RigName)
+			continue
+		}
+
 		// Only dispatch plugins with cooldown gates.
 		if p.Gate == nil || p.Gate.Type != plugin.GateCooldown {
 			continue

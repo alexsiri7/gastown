@@ -45,6 +45,11 @@ type Plugin struct {
 	// Instructions is the markdown body (after frontmatter).
 	Instructions string `json:"instructions,omitempty"`
 
+	// Enabled indicates whether the plugin is enabled (from frontmatter).
+	// Default is true when not specified. Can be overridden per-rig via
+	// settings/plugins.json.
+	Enabled bool `json:"enabled"`
+
 	// HasRunScript is true when a run.sh exists alongside plugin.md.
 	// When true, FormatMailBody instructs the dog to execute the script
 	// instead of interpreting the markdown instructions.
@@ -152,6 +157,7 @@ type PluginFrontmatter struct {
 	Name        string     `toml:"name"`
 	Description string     `toml:"description"`
 	Version     int        `toml:"version"`
+	Enabled     *bool      `toml:"enabled,omitempty"`
 	Gate        *Gate      `toml:"gate,omitempty"`
 	Tracking    *Tracking  `toml:"tracking,omitempty"`
 	Execution   *Execution `toml:"execution,omitempty"`
@@ -175,6 +181,7 @@ func (p *Plugin) ExecWrapperArgs() []string {
 type PluginSummary struct {
 	Name          string        `json:"name"`
 	Description   string        `json:"description"`
+	Enabled       bool          `json:"enabled"`
 	Location      Location      `json:"location"`
 	RigName       string        `json:"rig_name,omitempty"`
 	GateType      GateType      `json:"gate_type,omitempty"`
@@ -199,6 +206,7 @@ func (p *Plugin) Summary() PluginSummary {
 	return PluginSummary{
 		Name:          p.Name,
 		Description:   p.Description,
+		Enabled:       p.Enabled,
 		Location:      p.Location,
 		RigName:       p.RigName,
 		GateType:      gateType,

@@ -824,3 +824,52 @@ func TestFormatMailBody_WithoutRunScript(t *testing.T) {
 		t.Error("expected mail body to NOT contain run.sh command")
 	}
 }
+
+func TestParsePluginMD_EnabledField(t *testing.T) {
+	// Default: enabled=true when not specified.
+	content := []byte(`+++
+name = "default-enabled"
+version = 1
++++
+Instructions here.
+`)
+	p, err := parsePluginMD(content, "/test", LocationTown, "")
+	if err != nil {
+		t.Fatalf("parsePluginMD failed: %v", err)
+	}
+	if !p.Enabled {
+		t.Error("expected Enabled=true when not specified in frontmatter")
+	}
+
+	// Explicitly enabled.
+	content = []byte(`+++
+name = "explicitly-enabled"
+version = 1
+enabled = true
++++
+Instructions here.
+`)
+	p, err = parsePluginMD(content, "/test", LocationTown, "")
+	if err != nil {
+		t.Fatalf("parsePluginMD failed: %v", err)
+	}
+	if !p.Enabled {
+		t.Error("expected Enabled=true when explicitly set")
+	}
+
+	// Explicitly disabled.
+	content = []byte(`+++
+name = "explicitly-disabled"
+version = 1
+enabled = false
++++
+Instructions here.
+`)
+	p, err = parsePluginMD(content, "/test", LocationTown, "")
+	if err != nil {
+		t.Fatalf("parsePluginMD failed: %v", err)
+	}
+	if p.Enabled {
+		t.Error("expected Enabled=false when explicitly set to false")
+	}
+}

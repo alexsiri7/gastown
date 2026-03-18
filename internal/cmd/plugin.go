@@ -27,6 +27,8 @@ var (
 	pluginSyncSource   string
 	pluginSyncClean    bool
 	pluginSyncDryRun   bool
+	pluginEnableRig    string
+	pluginDisableRig   string
 )
 
 var pluginCmd = &cobra.Command{
@@ -135,6 +137,36 @@ Examples:
 	RunE: runPluginHistory,
 }
 
+var pluginEnableCmd = &cobra.Command{
+	Use:   "enable <name>",
+	Short: "Enable a plugin",
+	Long: `Enable a plugin, optionally for a specific rig.
+
+Without --rig, enables the plugin for all rigs (clears any per-rig override).
+With --rig, sets a per-rig override in settings/plugins.json.
+
+Examples:
+  gt plugin enable github-sheriff              # Enable for all rigs
+  gt plugin enable github-sheriff --rig reli   # Enable for reli only`,
+	Args: cobra.ExactArgs(1),
+	RunE: runPluginEnable,
+}
+
+var pluginDisableCmd = &cobra.Command{
+	Use:   "disable <name>",
+	Short: "Disable a plugin",
+	Long: `Disable a plugin, optionally for a specific rig.
+
+Without --rig, disables the plugin for all rigs (clears any per-rig override).
+With --rig, sets a per-rig override in settings/plugins.json.
+
+Examples:
+  gt plugin disable quality-review              # Disable for all rigs
+  gt plugin disable quality-review --rig reli   # Disable for reli only`,
+	Args: cobra.ExactArgs(1),
+	RunE: runPluginDisable,
+}
+
 func init() {
 	// List subcommand flags
 	pluginListCmd.Flags().BoolVar(&pluginListJSON, "json", false, "Output as JSON")
@@ -155,12 +187,18 @@ func init() {
 	pluginSyncCmd.Flags().BoolVar(&pluginSyncClean, "clean", false, "Remove plugins from target that don't exist in source")
 	pluginSyncCmd.Flags().BoolVar(&pluginSyncDryRun, "dry-run", false, "Show what would happen without syncing")
 
+	// Enable/Disable subcommand flags
+	pluginEnableCmd.Flags().StringVar(&pluginEnableRig, "rig", "", "Target rig (omit for all rigs)")
+	pluginDisableCmd.Flags().StringVar(&pluginDisableRig, "rig", "", "Target rig (omit for all rigs)")
+
 	// Add subcommands
 	pluginCmd.AddCommand(pluginListCmd)
 	pluginCmd.AddCommand(pluginShowCmd)
 	pluginCmd.AddCommand(pluginRunCmd)
 	pluginCmd.AddCommand(pluginHistoryCmd)
 	pluginCmd.AddCommand(pluginSyncCmd)
+	pluginCmd.AddCommand(pluginEnableCmd)
+	pluginCmd.AddCommand(pluginDisableCmd)
 
 	rootCmd.AddCommand(pluginCmd)
 }
@@ -233,6 +271,15 @@ func outputPluginListText(plugins []*plugin.Plugin, townRoot string) error {
 		return nil
 	}
 
+	// Load plugin settings for resolved enabled status.
+	settings, err := plugin.LoadPluginSettings(townRoot)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: loading plugin settings: %v\n", err)
+		settings = &plugin.PluginSettings{
+			Overrides: make(map[string]map[string]bool),
+		}
+	}
+
 	fmt.Printf("%s Discovered %d plugin(s)\n\n", style.Success.Render("●"), len(plugins))
 
 	// Group by location
@@ -251,7 +298,8 @@ func outputPluginListText(plugins []*plugin.Plugin, townRoot string) error {
 	if len(townPlugins) > 0 {
 		fmt.Printf("  %s\n", style.Bold.Render("Town-level plugins:"))
 		for _, p := range townPlugins {
-			printPluginSummary(p)
+			enabled := settings.IsEnabled(p.Name, p.RigName, p.Enabled)
+			printPluginSummary(p, enabled)
 		}
 		fmt.Println()
 	}
@@ -266,7 +314,8 @@ func outputPluginListText(plugins []*plugin.Plugin, townRoot string) error {
 	for _, rigName := range rigNames {
 		fmt.Printf("  %s\n", style.Bold.Render(fmt.Sprintf("Rig %s:", rigName)))
 		for _, p := range rigPlugins[rigName] {
-			printPluginSummary(p)
+			enabled := settings.IsEnabled(p.Name, p.RigName, p.Enabled)
+			printPluginSummary(p, enabled)
 		}
 		fmt.Println()
 	}
@@ -274,7 +323,7 @@ func outputPluginListText(plugins []*plugin.Plugin, townRoot string) error {
 	return nil
 }
 
-func printPluginSummary(p *plugin.Plugin) {
+func printPluginSummary(p *plugin.Plugin, enabledResolved bool) {
 	gateType := "manual"
 	if p.Gate != nil && p.Gate.Type != "" {
 		gateType = string(p.Gate.Type)
@@ -290,7 +339,13 @@ func printPluginSummary(p *plugin.Plugin) {
 		typeTag = "exec-wrapper"
 	}
 
-	fmt.Printf("    %s %s\n", style.Bold.Render(p.Name), style.Dim.Render(fmt.Sprintf("[%s]", typeTag)))
+	statusIcon := style.Success.Render("●")
+	if !enabledResolved {
+		statusIcon = style.Dim.Render("○")
+		typeTag += ", disabled"
+	}
+
+	fmt.Printf("    %s %s %s\n", statusIcon, style.Bold.Render(p.Name), style.Dim.Render(fmt.Sprintf("[%s]", typeTag)))
 	if desc != "" {
 		fmt.Printf("      %s\n", style.Dim.Render(desc))
 	}
@@ -299,7 +354,7 @@ func printPluginSummary(p *plugin.Plugin) {
 func runPluginShow(cmd *cobra.Command, args []string) error {
 	name := args[0]
 
-	scanner, _, err := getPluginScanner()
+	scanner, townRoot, err := getPluginScanner()
 	if err != nil {
 		return err
 	}
@@ -313,7 +368,7 @@ func runPluginShow(cmd *cobra.Command, args []string) error {
 		return outputPluginShowJSON(p)
 	}
 
-	return outputPluginShowText(p)
+	return outputPluginShowText(p, townRoot)
 }
 
 func outputPluginShowJSON(p *plugin.Plugin) error {
@@ -322,9 +377,21 @@ func outputPluginShowJSON(p *plugin.Plugin) error {
 	return enc.Encode(p)
 }
 
-func outputPluginShowText(p *plugin.Plugin) error {
+func outputPluginShowText(p *plugin.Plugin, townRoot string) error {
 	fmt.Printf("%s %s\n", style.Bold.Render("Plugin:"), p.Name)
 	fmt.Printf("%s %s\n", style.Bold.Render("Path:"), p.Path)
+
+	// Show resolved enabled status.
+	settings, _ := plugin.LoadPluginSettings(townRoot)
+	if settings == nil {
+		settings = &plugin.PluginSettings{Overrides: make(map[string]map[string]bool)}
+	}
+	enabled := settings.IsEnabled(p.Name, p.RigName, p.Enabled)
+	if enabled {
+		fmt.Printf("%s %s\n", style.Bold.Render("Enabled:"), style.Success.Render("true"))
+	} else {
+		fmt.Printf("%s %s\n", style.Bold.Render("Enabled:"), style.Warning.Render("false"))
+	}
 
 	if p.Description != "" {
 		fmt.Printf("%s %s\n", style.Bold.Render("Description:"), p.Description)
@@ -624,6 +691,59 @@ func runPluginHistory(cmd *cobra.Command, args []string) error {
 			resultStyle.Render(resultIcon),
 			run.CreatedAt.Format("2006-01-02 15:04"),
 			style.Dim.Render(run.ID))
+	}
+
+	return nil
+}
+
+func runPluginEnable(cmd *cobra.Command, args []string) error {
+	return setPluginEnabled(args[0], pluginEnableRig, true)
+}
+
+func runPluginDisable(cmd *cobra.Command, args []string) error {
+	return setPluginEnabled(args[0], pluginDisableRig, false)
+}
+
+func setPluginEnabled(name, rig string, enabled bool) error {
+	// Verify plugin exists.
+	scanner, townRoot, err := getPluginScanner()
+	if err != nil {
+		return err
+	}
+	if _, err := scanner.GetPlugin(name); err != nil {
+		return err
+	}
+
+	settings, err := plugin.LoadPluginSettings(townRoot)
+	if err != nil {
+		return err
+	}
+
+	action := "Enabled"
+	if !enabled {
+		action = "Disabled"
+	}
+
+	if rig != "" {
+		settings.SetOverride(rig, name, enabled)
+		if err := plugin.SavePluginSettings(townRoot, settings); err != nil {
+			return err
+		}
+		fmt.Printf("%s %s plugin %s for rig %s\n", style.Success.Render("✓"), action, style.Bold.Render(name), rig)
+	} else {
+		// No --rig: set override for all known rigs.
+		rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
+		rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+		if err != nil {
+			return fmt.Errorf("loading rigs config: %w", err)
+		}
+		for rigName := range rigsConfig.Rigs {
+			settings.SetOverride(rigName, name, enabled)
+		}
+		if err := plugin.SavePluginSettings(townRoot, settings); err != nil {
+			return err
+		}
+		fmt.Printf("%s %s plugin %s for all rigs\n", style.Success.Render("✓"), action, style.Bold.Render(name))
 	}
 
 	return nil

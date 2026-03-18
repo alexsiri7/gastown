@@ -185,6 +185,12 @@ func parsePluginMD(content []byte, pluginDir string, location Location, rigName 
 		return nil, fmt.Errorf("missing required field: name")
 	}
 
+	// Default enabled=true unless frontmatter explicitly sets it.
+	enabled := true
+	if fm.Enabled != nil {
+		enabled = *fm.Enabled
+	}
+
 	plugin := &Plugin{
 		Name:         fm.Name,
 		Description:  fm.Description,
@@ -192,6 +198,7 @@ func parsePluginMD(content []byte, pluginDir string, location Location, rigName 
 		Location:     location,
 		Path:         pluginDir,
 		RigName:      rigName,
+		Enabled:      enabled,
 		Gate:         fm.Gate,
 		Tracking:     fm.Tracking,
 		Execution:    fm.Execution,
