@@ -394,6 +394,18 @@ type ProcessResult struct {
 
 // doMerge performs the actual git merge operation.
 func (e *Engineer) doMerge(ctx context.Context, branch, target, sourceIssue string, skipGates ...bool) ProcessResult {
+	// GH#2778: Check no_merge flag on source issue before merging. The polecat
+	// normally skips MR creation when no_merge is set, but if an MR is created
+	// manually (e.g., gh pr create) the refinery would otherwise auto-merge it.
+	if sourceIssue != "" {
+		if si, err := e.beads.Show(sourceIssue); err == nil && si != nil {
+			if af := beads.ParseAttachmentFields(si); af != nil && af.NoMerge {
+				_, _ = fmt.Fprintf(e.output, "[Engineer] Source issue %s has no_merge=true — skipping merge\n", sourceIssue)
+				return ProcessResult{Error: "no_merge flag set on source issue"}
+			}
+		}
+	}
+
 	// Step 1: Verify source branch exists locally (shared .repo.git with polecats)
 	_, _ = fmt.Fprintf(e.output, "[Engineer] Checking local branch %s...\n", branch)
 	exists, err := e.git.BranchExists(branch)
@@ -1351,6 +1363,11 @@ func (e *Engineer) ListReadyMRs() ([]*MRInfo, error) {
 			continue // Skip issues without MR fields
 		}
 
+		// Filter by rig — wisps are shared across all rigs (GH#2718).
+		if fields.Rig != "" && !strings.EqualFold(fields.Rig, e.rig.Name) {
+			continue
+		}
+
 		// Belt-and-suspenders: skip MRs whose source issue has no_merge flag.
 		// gt done already skips MR creation for no_merge issues, but if an MR
 		// slips through, the refinery should not pick it up.
@@ -1419,6 +1436,11 @@ func (e *Engineer) ListBlockedMRs() ([]*MRInfo, error) {
 			continue
 		}
 
+		// Filter by rig — wisps are shared across all rigs (GH#2718).
+		if fields.Rig != "" && !strings.EqualFold(fields.Rig, e.rig.Name) {
+			continue
+		}
+
 		mr := issueToMRInfo(issue, fields)
 		mr.BlockedBy = blockedBy
 		mrs = append(mrs, mr)
@@ -1453,6 +1475,11 @@ func (e *Engineer) ListAllOpenMRs() ([]*MRInfo, error) {
 			continue
 		}
 
+		// Filter by rig — wisps are shared across all rigs (GH#2718).
+		if fields.Rig != "" && !strings.EqualFold(fields.Rig, e.rig.Name) {
+			continue
+		}
+
 		mr := issueToMRInfo(issue, fields)
 
 		// Check branch existence (local + remote tracking refs)
@@ -1478,7 +1505,17 @@ func (e *Engineer) ListQueueAnomalies(now time.Time) ([]*MRAnomaly, error) {
 		return nil, fmt.Errorf("querying beads for merge-requests: %w", err)
 	}
 
-	return detectQueueAnomalies(issues, now, e.config.StaleClaimWarningAfter, func(branch string) (bool, bool, error) {
+	// Filter by rig — wisps are shared across all rigs (GH#2718).
+	filtered := make([]*beads.Issue, 0, len(issues))
+	for _, issue := range issues {
+		fields := beads.ParseMRFields(issue)
+		if fields != nil && fields.Rig != "" && !strings.EqualFold(fields.Rig, e.rig.Name) {
+			continue
+		}
+		filtered = append(filtered, issue)
+	}
+
+	return detectQueueAnomalies(filtered, now, e.config.StaleClaimWarningAfter, func(branch string) (bool, bool, error) {
 		localExists, err := e.git.BranchExists(branch)
 		if err != nil {
 			return false, false, err

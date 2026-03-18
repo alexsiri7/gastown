@@ -221,6 +221,7 @@ func (b *Beads) CreateAgentBead(id, title string, fields *AgentFields) (*Issue, 
 			"--description=" + description,
 			"--type=agent",
 			"--labels=gt:agent",
+			"--no-history",
 		}
 		if NeedsForceForID(id) {
 			a = append(a, "--force")
@@ -233,9 +234,9 @@ func (b *Beads) CreateAgentBead(id, title string, fields *AgentFields) (*Issue, 
 		return a
 	}
 
-	// Create agent bead in the issues table (not wisps). Agent beads must
-	// persist across sessions — ephemeral wisps get deleted by routine GC,
-	// causing identity lookup failures (GH#2768).
+	// Create agent bead in the issues table with --no-history to skip
+	// git commit overhead. Agent beads are durable identities that must
+	// survive wisp GC (GH#2768).
 	out, err := b.run(buildArgs()...)
 	if err != nil {
 		out, err = b.run(buildArgs()...)
@@ -344,6 +345,13 @@ func (b *Beads) CreateOrReopenAgentBead(id, title string, fields *AgentFields) (
 	if _, err := target.run("update", id, "--type=agent"); err != nil {
 		return nil, fmt.Errorf("fixing agent bead type: %w", err)
 	}
+	// Ensure agent bead uses --no-history to skip git commit overhead
+	// without making it a wisp (GH#2768: wisps get GC'd, killing agent identities)
+	if _, err := target.run("update", id, "--no-history"); err != nil {
+		// Non-fatal: the bead is functional without --no-history flag
+		_ = err
+	}
+
 	// Note: role slot no longer set - role definitions are config-based
 
 	// Set hook_bead slot so gt mol status can find hooked work via the
