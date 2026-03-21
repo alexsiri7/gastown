@@ -277,6 +277,11 @@ func (m *Manager) repairRefineryWorktree(refineryRigDir string) error {
 		_, _ = fmt.Fprintf(m.output, "⚠ Could not configure hooks for repaired worktree: %v\n", err)
 	}
 
+	// Create agent-specific instruction file symlinks (e.g., GEMINI.md → AGENTS.md).
+	if err := rig.EnsureInstructionsSymlinks(refineryRigDir); err != nil {
+		_, _ = fmt.Fprintf(m.output, "⚠ Could not create instructions symlinks: %v\n", err)
+	}
+
 	_, _ = fmt.Fprintf(m.output, "✓ Auto-repaired missing refinery worktree at %s\n", refineryRigDir)
 	return nil
 }

@@ -1121,6 +1121,18 @@ func TestAddWithOptions_NoFilesAddedToRepo(t *testing.T) {
 		if strings.Contains(line, ".beads") {
 			continue
 		}
+		// Agent instruction symlinks (e.g., GEMINI.md → AGENTS.md) are expected
+		// infrastructure created by EnsureInstructionsSymlinks.
+		isAgentSymlink := false
+		for _, name := range rig.InstructionsSymlinkNames() {
+			if strings.Contains(line, name) {
+				isAgentSymlink = true
+				break
+			}
+		}
+		if isAgentSymlink {
+			continue
+		}
 		unexpected = append(unexpected, line)
 	}
 	if len(unexpected) > 0 {

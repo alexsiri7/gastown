@@ -287,6 +287,11 @@ func (m *Manager) addLocked(name string, createBranch bool) (*CrewWorker, error)
 		style.PrintWarning("could not copy overlay files: %v", err)
 	}
 
+	// Create agent-specific instruction file symlinks (e.g., GEMINI.md → AGENTS.md).
+	if err := rig.EnsureInstructionsSymlinks(crewPath); err != nil {
+		style.PrintWarning("could not create instructions symlinks: %v", err)
+	}
+
 	// Run setup hooks from .runtime/setup-hooks/.
 	// These hooks can inject local config, copy secrets, or perform other setup tasks.
 	if err := rig.RunSetupHooks(m.rig.Path, crewPath); err != nil {

@@ -780,6 +780,12 @@ func (m *Manager) addWithOptionsLocked(name string, opts AddOptions, polecatDir 
 		style.PrintWarning("could not run setup hooks: %v", err)
 	}
 
+	// Create agent-specific instruction file symlinks AFTER all setup is complete
+	// (some setup steps may create AGENTS.md or other instruction files).
+	if err := rig.EnsureInstructionsSymlinks(clonePath); err != nil {
+		style.PrintWarning("could not create instructions symlinks: %v", err)
+	}
+
 	agentID := m.agentBeadID(name)
 	if err = m.createAgentBeadWithRetry(agentID, &beads.AgentFields{
 		RoleType:   "polecat",
@@ -965,6 +971,12 @@ func (m *Manager) AddWithOptions(name string, opts AddOptions) (_ *Polecat, retE
 	if err := rig.RunSetupHooks(m.rig.Path, clonePath); err != nil {
 		// Non-fatal - log warning but continue
 		style.PrintWarning("could not run setup hooks: %v", err)
+	}
+
+	// Create agent-specific instruction file symlinks (e.g., GEMINI.md → AGENTS.md).
+	// Runs after all setup to ensure target files exist.
+	if err := rig.EnsureInstructionsSymlinks(clonePath); err != nil {
+		style.PrintWarning("could not create instructions symlinks: %v", err)
 	}
 
 	// NOTE: Slash commands (.claude/commands/) are provisioned at town level by gt install.
@@ -1451,6 +1463,11 @@ func (m *Manager) RepairWorktreeWithOptions(name string, force bool, opts AddOpt
 	// Keep worktree runtime ignores local so the tracked tree stays clean.
 	if err := rig.EnsureLocalExcludePatterns(newClonePath); err != nil {
 		style.PrintWarning("could not update local git excludes: %v", err)
+	}
+
+	// Create agent-specific instruction file symlinks (e.g., GEMINI.md → AGENTS.md).
+	if err := rig.EnsureInstructionsSymlinks(newClonePath); err != nil {
+		style.PrintWarning("could not create instructions symlinks: %v", err)
 	}
 
 	// NOTE: Slash commands inherited from town level - no per-workspace copies needed.

@@ -21,6 +21,16 @@ func gasTownIgnorePatterns() []string {
 	}
 }
 
+// localExcludePatterns returns patterns for the local git exclude file.
+// This includes everything from gasTownIgnorePatterns plus agent-specific
+// instruction file symlinks (e.g., GEMINI.md) that should not appear in
+// the tracked .gitignore.
+func localExcludePatterns() []string {
+	patterns := gasTownIgnorePatterns()
+	patterns = append(patterns, InstructionsSymlinkNames()...)
+	return patterns
+}
+
 // CopyOverlay copies files from <rigPath>/.runtime/overlay/ to the destination path.
 // This allows storing gitignored files (like .env) that services need at their root.
 // The overlay is copied non-recursively - only files, not subdirectories.
@@ -163,7 +173,7 @@ func EnsureLocalExcludePatterns(worktreePath string) error {
 	}
 
 	var missing []string
-	for _, pattern := range gasTownIgnorePatterns() {
+	for _, pattern := range localExcludePatterns() {
 		found := false
 		for _, line := range strings.Split(existingContent, "\n") {
 			line = strings.TrimSpace(line)

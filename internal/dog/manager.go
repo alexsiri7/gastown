@@ -142,6 +142,11 @@ func (m *Manager) Add(name string) (*Dog, error) {
 		if err := m.setupWorktreeBeads(worktreePath, rigName); err != nil {
 			return nil, fmt.Errorf("setting up shared beads for rig %s: %w", rigName, err)
 		}
+
+		// Create agent-specific instruction file symlinks (e.g., GEMINI.md → AGENTS.md).
+		if err := rig.EnsureInstructionsSymlinks(worktreePath); err != nil {
+			style.PrintWarning("could not create instructions symlinks for rig %s: %v", rigName, err)
+		}
 	}
 
 	// Create initial state file
@@ -524,6 +529,10 @@ func (m *Manager) Refresh(name string) error {
 			style.PrintWarning("could not set up shared beads for %s: %v", rigName, err)
 		}
 
+		if err := rig.EnsureInstructionsSymlinks(worktreePath); err != nil {
+			style.PrintWarning("could not create instructions symlinks for %s: %v", rigName, err)
+		}
+
 		// Persist state after each rig so completed rigs aren't lost on
 		// a later failure.
 		state.Worktrees[rigName] = worktreePath
@@ -601,6 +610,10 @@ func (m *Manager) RefreshRig(name, rigName string) error {
 	// Re-establish shared beads redirect for the fresh worktree.
 	if err := m.setupWorktreeBeads(worktreePath, rigName); err != nil {
 		style.PrintWarning("could not set up shared beads for %s: %v", rigName, err)
+	}
+
+	if err := rig.EnsureInstructionsSymlinks(worktreePath); err != nil {
+		style.PrintWarning("could not create instructions symlinks for %s: %v", rigName, err)
 	}
 
 	// Update state

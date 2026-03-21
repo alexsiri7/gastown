@@ -10,6 +10,7 @@ import (
 	"github.com/steveyegge/gastown/internal/config"
 	"github.com/steveyegge/gastown/internal/constants"
 	"github.com/steveyegge/gastown/internal/git"
+	"github.com/steveyegge/gastown/internal/rig"
 	"github.com/steveyegge/gastown/internal/style"
 	"github.com/steveyegge/gastown/internal/workspace"
 )
@@ -164,6 +165,11 @@ func runWorktree(cmd *cobra.Command, args []string) error {
 	// Set local git config for this worktree
 	if err := setGitConfig(worktreePath, "user.name", bdActor); err != nil {
 		fmt.Printf("%s Warning: could not set git author name: %v\n", style.Warning.Render("⚠"), err)
+	}
+
+	// Create agent-specific instruction file symlinks (e.g., GEMINI.md → AGENTS.md).
+	if err := rig.EnsureInstructionsSymlinks(worktreePath); err != nil {
+		fmt.Printf("%s Warning: could not create instructions symlinks: %v\n", style.Warning.Render("⚠"), err)
 	}
 
 	fmt.Printf("%s Created worktree for cross-rig work\n", style.Success.Render("✓"))

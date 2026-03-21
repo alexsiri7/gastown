@@ -694,6 +694,10 @@ func (m *Manager) AddRig(opts AddRigOptions) (*Rig, error) {
 		// Non-fatal - log warning but continue
 		fmt.Printf("  Warning: Could not copy overlay files to refinery: %v\n", err)
 	}
+	// Create agent-specific instruction file symlinks (e.g., GEMINI.md → AGENTS.md).
+	if err := EnsureInstructionsSymlinks(refineryRigPath); err != nil {
+		fmt.Printf("  Warning: Could not create instructions symlinks: %v\n", err)
+	}
 
 	// NOTE: Claude settings are installed by the agent at startup, not here.
 	// Claude Code does NOT traverse parent directories for settings.json.
