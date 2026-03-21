@@ -7,22 +7,15 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-
-	"github.com/steveyegge/gastown/internal/config"
 )
 
-// StaleSQLServerInfoCheck detects stale sql-server.info files in .beads/dolt/.dolt/
-// directories. These files are written by Dolt when starting a SQL server and contain
-// "PID:PORT:UUID". In server mode, a stale copy causes bd to refuse to connect,
-// producing "database not found" errors even though the central Dolt server is healthy.
+// StaleSQLServerInfoCheck detects stale sql-server.info files left by crashed
+// or stopped local Dolt servers. When running in dolt_mode=server, these files
+// cause bd to connect to a dead local server instead of the central Dolt server,
+// resulting in "database not found" errors. See GH#2770.
 type StaleSQLServerInfoCheck struct {
 	FixableCheck
-	staleFiles []staleInfoFile
-}
-
-type staleInfoFile struct {
-	path string
-	pid  int
+	staleFiles []string
 }
 
 // NewStaleSQLServerInfoCheck creates a new stale sql-server.info check.
@@ -31,8 +24,8 @@ func NewStaleSQLServerInfoCheck() *StaleSQLServerInfoCheck {
 		FixableCheck: FixableCheck{
 			BaseCheck: BaseCheck{
 				CheckName:        "stale-sql-server-info",
-				CheckDescription: "Detect stale sql-server.info files in beads directories",
-				CheckCategory:    CategoryCleanup,
+				CheckDescription: "Detect stale Dolt sql-server.info files from dead local servers",
+				CheckCategory:    CategoryConfig,
 			},
 		},
 	}
@@ -42,50 +35,31 @@ func NewStaleSQLServerInfoCheck() *StaleSQLServerInfoCheck {
 func (c *StaleSQLServerInfoCheck) Run(ctx *CheckContext) *CheckResult {
 	c.staleFiles = nil
 
+	// Find all sql-server.info files under the town root
 	var details []string
-
-	// Collect all beads directories to check
-	beadsDirs := findAllBeadsDirs(ctx.TownRoot)
-
-	for _, beadsDir := range beadsDirs {
-		infoPath := filepath.Join(beadsDir, "dolt", ".dolt", "sql-server.info")
-		data, err := os.ReadFile(infoPath) //nolint:gosec // G304: path is constructed internally
+	_ = filepath.Walk(ctx.TownRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			continue // No info file
+			return nil
+		}
+		// Skip .git directories and node_modules
+		if info.IsDir() && (info.Name() == ".git" || info.Name() == "node_modules") {
+			return filepath.SkipDir
+		}
+		if info.Name() != "sql-server.info" {
+			return nil
+		}
+		// Only care about files inside .dolt directories
+		if !strings.Contains(path, ".dolt") {
+			return nil
 		}
 
-		// Format: "PID:PORT:UUID"
-		parts := strings.SplitN(strings.TrimSpace(string(data)), ":", 3)
-		if len(parts) < 1 {
-			c.staleFiles = append(c.staleFiles, staleInfoFile{path: infoPath, pid: 0})
-			relPath, _ := filepath.Rel(ctx.TownRoot, infoPath)
-			details = append(details, fmt.Sprintf("Malformed sql-server.info: %s", relPath))
-			continue
+		if c.isStale(path) {
+			c.staleFiles = append(c.staleFiles, path)
+			relPath, _ := filepath.Rel(ctx.TownRoot, path)
+			details = append(details, fmt.Sprintf("Stale sql-server.info: %s", relPath))
 		}
-
-		pid, err := strconv.Atoi(parts[0])
-		if err != nil || pid <= 0 {
-			c.staleFiles = append(c.staleFiles, staleInfoFile{path: infoPath, pid: 0})
-			relPath, _ := filepath.Rel(ctx.TownRoot, infoPath)
-			details = append(details, fmt.Sprintf("Malformed sql-server.info: %s", relPath))
-			continue
-		}
-
-		// Check if the process is alive
-		proc, err := os.FindProcess(pid)
-		if err != nil {
-			c.staleFiles = append(c.staleFiles, staleInfoFile{path: infoPath, pid: pid})
-			relPath, _ := filepath.Rel(ctx.TownRoot, infoPath)
-			details = append(details, fmt.Sprintf("Stale sql-server.info (PID %d, process not found): %s", pid, relPath))
-			continue
-		}
-
-		if err := proc.Signal(syscall.Signal(0)); err != nil {
-			c.staleFiles = append(c.staleFiles, staleInfoFile{path: infoPath, pid: pid})
-			relPath, _ := filepath.Rel(ctx.TownRoot, infoPath)
-			details = append(details, fmt.Sprintf("Stale sql-server.info (PID %d, process dead): %s", pid, relPath))
-		}
-	}
+		return nil
+	})
 
 	if len(c.staleFiles) == 0 {
 		return &CheckResult{
@@ -98,45 +72,55 @@ func (c *StaleSQLServerInfoCheck) Run(ctx *CheckContext) *CheckResult {
 	return &CheckResult{
 		Name:    c.Name(),
 		Status:  StatusWarning,
-		Message: fmt.Sprintf("%d stale sql-server.info file(s)", len(c.staleFiles)),
+		Message: fmt.Sprintf("%d stale sql-server.info file(s) from dead Dolt servers", len(c.staleFiles)),
 		Details: details,
 		FixHint: "Run 'gt doctor --fix' to remove stale sql-server.info files",
 	}
 }
 
-// Fix removes stale sql-server.info files.
+// Fix removes all detected stale sql-server.info files.
 func (c *StaleSQLServerInfoCheck) Fix(ctx *CheckContext) error {
-	for _, info := range c.staleFiles {
-		if err := os.Remove(info.path); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("could not remove %s: %w", info.path, err)
+	for _, path := range c.staleFiles {
+		if err := os.Remove(path); err != nil {
+			return fmt.Errorf("could not remove stale sql-server.info %s: %w", path, err)
 		}
 	}
 	return nil
 }
 
-// findAllBeadsDirs returns all .beads directories in the town.
-func findAllBeadsDirs(townRoot string) []string {
-	var dirs []string
-
-	// Town-level .beads
-	townBeads := filepath.Join(townRoot, ".beads")
-	if info, err := os.Stat(townBeads); err == nil && info.IsDir() {
-		dirs = append(dirs, townBeads)
-	}
-
-	// Rig-level .beads directories
-	rigsConfigPath := filepath.Join(townRoot, "mayor", "rigs.json")
-	rigsConfig, err := config.LoadRigsConfig(rigsConfigPath)
+// isStale checks if the sql-server.info file references a dead process.
+// The file format is "PID:port:UUID" (one line).
+func (c *StaleSQLServerInfoCheck) isStale(path string) bool {
+	data, err := os.ReadFile(path) //nolint:gosec // G304: path from filepath.Walk
 	if err != nil {
-		return dirs
+		return false
 	}
 
-	for rigName := range rigsConfig.Rigs {
-		rigBeads := filepath.Join(townRoot, rigName, "mayor", "rig", ".beads")
-		if info, err := os.Stat(rigBeads); err == nil && info.IsDir() {
-			dirs = append(dirs, rigBeads)
-		}
+	content := strings.TrimSpace(string(data))
+	if content == "" {
+		return true // Empty file is stale
 	}
 
-	return dirs
+	// Parse PID from "PID:port:UUID" format
+	parts := strings.SplitN(content, ":", 3)
+	if len(parts) < 1 {
+		return true
+	}
+
+	pid, err := strconv.Atoi(parts[0])
+	if err != nil || pid <= 0 {
+		return true // Corrupt or invalid PID
+	}
+
+	// Check if the process is alive using signal 0 (no-op probe)
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return true
+	}
+
+	if err := proc.Signal(syscall.Signal(0)); err != nil {
+		return true // Process is dead
+	}
+
+	return false // Process is alive, not stale
 }
