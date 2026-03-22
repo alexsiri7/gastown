@@ -928,9 +928,11 @@ func (m *Manager) Stop(name string) error {
 	return nil
 }
 
-// IsRunning checks if a crew member's session is active.
+// IsRunning checks if a crew member's session is active and healthy.
+// Uses CheckSessionHealth to detect dead panes, not just session existence.
 func (m *Manager) IsRunning(name string) (bool, error) {
 	t := tmux.NewTmux()
 	sessionID := m.SessionName(name)
-	return t.HasSession(sessionID)
+	status := t.CheckSessionHealth(sessionID, 0)
+	return status == tmux.SessionHealthy, nil
 }

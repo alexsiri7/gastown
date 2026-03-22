@@ -1587,7 +1587,7 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 
 		// 1. Start the witness
 		witnessSession := session.WitnessSessionName(session.PrefixFor(rigName))
-		witnessRunning, _ := t.HasSession(witnessSession)
+		witnessRunning := t.CheckSessionHealth(witnessSession, 0) == tmux.SessionHealthy
 		if witnessRunning {
 			skipped = append(skipped, "witness")
 		} else {
@@ -1607,7 +1607,7 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 
 		// 2. Start the refinery
 		refinerySession := session.RefinerySessionName(session.PrefixFor(rigName))
-		refineryRunning, _ := t.HasSession(refinerySession)
+		refineryRunning := t.CheckSessionHealth(refinerySession, 0) == tmux.SessionHealthy
 		if refineryRunning {
 			skipped = append(skipped, "refinery")
 		} else {
@@ -1623,7 +1623,7 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 
 		// 3. Start the SRE
 		sreSession := session.SRESessionName(session.PrefixFor(rigName))
-		sreRunning, _ := t.HasSession(sreSession)
+		sreRunning := t.CheckSessionHealth(sreSession, 0) == tmux.SessionHealthy
 		if sreRunning {
 			skipped = append(skipped, "sre")
 		} else {
@@ -1870,10 +1870,11 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf(" (%d)\n", len(polecats))
 		for _, p := range polecats {
 			sessionName := session.PolecatSessionName(session.PrefixFor(rigName), p.Name)
-			hasSession, _ := t.HasSession(sessionName)
+			health := t.CheckSessionHealth(sessionName, 0)
+			isAlive := health == tmux.SessionHealthy
 
 			sessionIcon := style.Dim.Render("○")
-			if hasSession {
+			if isAlive {
 				sessionIcon = style.Success.Render("●")
 			}
 
@@ -1881,10 +1882,11 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 			// Per gt-zecmc design: tmux is ground truth for observable states.
 			// If session is running but beads says done, the polecat is still alive.
 			// If session is dead but beads says working, the polecat is actually done.
+			// Uses CheckSessionHealth (not HasSession) to detect dead panes.
 			displayState := p.State
-			if hasSession && displayState == polecat.StateDone {
+			if isAlive && displayState == polecat.StateDone {
 				displayState = polecat.StateWorking
-			} else if !hasSession && displayState == polecat.StateWorking {
+			} else if !isAlive && displayState == polecat.StateWorking {
 				displayState = polecat.StateDone
 			}
 
@@ -1908,10 +1910,11 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 		fmt.Printf(" (%d)\n", len(crewWorkers))
 		for _, w := range crewWorkers {
 			sessionName := crewSessionName(rigName, w.Name)
-			hasSession, _ := t.HasSession(sessionName)
+			health := t.CheckSessionHealth(sessionName, 0)
+			isAlive := health == tmux.SessionHealthy
 
 			sessionIcon := style.Dim.Render("○")
-			if hasSession {
+			if isAlive {
 				sessionIcon = style.Success.Render("●")
 			}
 
@@ -2138,7 +2141,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 
 		// 1. Start the witness
 		witnessSession := session.WitnessSessionName(session.PrefixFor(rigName))
-		witnessRunning, _ := t.HasSession(witnessSession)
+		witnessRunning := t.CheckSessionHealth(witnessSession, 0) == tmux.SessionHealthy
 		if witnessRunning {
 			skipped = append(skipped, "witness")
 		} else {
@@ -2157,7 +2160,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 
 		// 2. Start the refinery
 		refinerySession := session.RefinerySessionName(session.PrefixFor(rigName))
-		refineryRunning, _ := t.HasSession(refinerySession)
+		refineryRunning := t.CheckSessionHealth(refinerySession, 0) == tmux.SessionHealthy
 		if refineryRunning {
 			skipped = append(skipped, "refinery")
 		} else {
@@ -2172,7 +2175,7 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 
 		// 3. Start the SRE
 		sreSession := session.SRESessionName(session.PrefixFor(rigName))
-		sreRunning, _ := t.HasSession(sreSession)
+		sreRunning := t.CheckSessionHealth(sreSession, 0) == tmux.SessionHealthy
 		if sreRunning {
 			skipped = append(skipped, "sre")
 		} else {
