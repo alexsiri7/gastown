@@ -65,6 +65,120 @@ func TestCreateOptions(t *testing.T) {
 	}
 }
 
+// TestCreateOptions_RouteVia verifies the RouteVia field for cross-rig routing.
+func TestCreateOptions_RouteVia(t *testing.T) {
+	opts := CreateOptions{
+		Title:    "MR bead",
+		Labels:   []string{"gt:merge-request"},
+		RouteVia: "gs-122",
+	}
+	if opts.RouteVia != "gs-122" {
+		t.Errorf("RouteVia = %q, want gs-122", opts.RouteVia)
+	}
+}
+
+// TestCreate_RouteViaFallbackToParent verifies that Create falls back to
+// routing via Parent when RouteVia is empty (gs-122).
+func TestCreate_RouteViaFallbackToParent(t *testing.T) {
+	// Set up a town with routes so that "gs-" prefix routes to a different rig
+	tmpDir := t.TempDir()
+
+	// Create mayor/town.json for FindTownRoot
+	mayorDir := filepath.Join(tmpDir, "mayor")
+	if err := os.MkdirAll(mayorDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mayorDir, "town.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create routes.jsonl with gs- prefix routing to a different rig
+	beadsDir := filepath.Join(tmpDir, ".beads")
+	if err := os.MkdirAll(beadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	routesContent := `{"prefix": "gs-", "path": "gastown/mayor/rig"}
+`
+	if err := os.WriteFile(filepath.Join(beadsDir, "routes.jsonl"), []byte(routesContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create the target rig beads directory
+	rigBeadsDir := filepath.Join(tmpDir, "gastown", "mayor", "rig", ".beads")
+	if err := os.MkdirAll(rigBeadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a Beads instance pointing to the town root (HQ beads dir)
+	b := NewWithBeadsDir(tmpDir, beadsDir)
+
+	// Verify that ResolveRoutingTarget routes gs- prefix to the rig
+	target := ResolveRoutingTarget(b.getTownRoot(), "gs-122", b.getResolvedBeadsDir())
+	if target != rigBeadsDir {
+		t.Errorf("ResolveRoutingTarget(gs-122) = %q, want %q", target, rigBeadsDir)
+	}
+
+	// Verify same-rig routing returns the current beads dir
+	target = ResolveRoutingTarget(b.getTownRoot(), "unknown-xyz", b.getResolvedBeadsDir())
+	if target != beadsDir {
+		t.Errorf("ResolveRoutingTarget(unknown-xyz) = %q, want fallback %q", target, beadsDir)
+	}
+}
+
+// TestCreate_RouteViaSelectsCorrectTarget verifies that Create with RouteVia
+// routes to the rig that owns the referenced bead's prefix (gs-122).
+func TestCreate_RouteViaSelectsCorrectTarget(t *testing.T) {
+	// Set up a town with two rigs with different prefixes
+	tmpDir := t.TempDir()
+
+	mayorDir := filepath.Join(tmpDir, "mayor")
+	if err := os.MkdirAll(mayorDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(mayorDir, "town.json"), []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// HQ beads dir (current)
+	hqBeadsDir := filepath.Join(tmpDir, ".beads")
+	if err := os.MkdirAll(hqBeadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Routes: gs- -> gastown rig, hq- -> HQ
+	routesContent := `{"prefix": "gs-", "path": "gastown/mayor/rig"}
+{"prefix": "hq-", "path": "."}
+`
+	if err := os.WriteFile(filepath.Join(hqBeadsDir, "routes.jsonl"), []byte(routesContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Target rig beads dir
+	rigBeadsDir := filepath.Join(tmpDir, "gastown", "mayor", "rig", ".beads")
+	if err := os.MkdirAll(rigBeadsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	b := NewWithBeadsDir(tmpDir, hqBeadsDir)
+
+	// When RouteVia is gs-122, the routing target should be the gastown rig
+	routeRef := "gs-122"
+	targetDir := ResolveRoutingTarget(b.getTownRoot(), routeRef, b.getResolvedBeadsDir())
+	if targetDir == b.getResolvedBeadsDir() {
+		t.Fatalf("RouteVia %q should route to a different dir, but got same dir %q", routeRef, targetDir)
+	}
+	if targetDir != rigBeadsDir {
+		t.Errorf("RouteVia %q routed to %q, want %q", routeRef, targetDir, rigBeadsDir)
+	}
+
+	// When RouteVia is hq-abc, it should stay in the current beads dir
+	routeRef = "hq-abc"
+	targetDir = ResolveRoutingTarget(b.getTownRoot(), routeRef, b.getResolvedBeadsDir())
+	if targetDir != hqBeadsDir {
+		t.Errorf("RouteVia %q routed to %q, want %q (same dir)", routeRef, targetDir, hqBeadsDir)
+	}
+}
+
 // TestIsFlagLikeTitle verifies flag-like title detection (gt-e0kx5).
 func TestIsFlagLikeTitle(t *testing.T) {
 	tests := []struct {

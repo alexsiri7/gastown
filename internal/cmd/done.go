@@ -867,6 +867,7 @@ func runDone(cmd *cobra.Command, args []string) (retErr error) {
 				Priority:    priority,
 				Description: description,
 				Ephemeral:   true,
+				RouteVia:    issueID,
 			})
 			if err != nil {
 				// Non-fatal: record the error and skip to notifyWitness.

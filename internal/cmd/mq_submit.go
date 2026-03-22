@@ -223,12 +223,15 @@ func runMqSubmit(cmd *cobra.Command, args []string) error {
 		fmt.Printf("%s MR already exists (idempotent)\n", style.Bold.Render("✓"))
 	} else {
 		// Create MR bead (ephemeral wisp - will be cleaned up after merge)
+		// RouteVia ensures the MR bead is created in the same rig as the
+		// source issue, preventing cross-rig "issue not found" failures (gs-122).
 		mrIssue, err = bd.Create(beads.CreateOptions{
 			Title:       title,
 			Labels:      []string{"gt:merge-request"},
 			Priority:    priority,
 			Description: description,
 			Ephemeral:   true,
+			RouteVia:    issueID,
 		})
 		if err != nil {
 			return fmt.Errorf("creating merge request bead: %w", err)

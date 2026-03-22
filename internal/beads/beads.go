@@ -283,6 +283,7 @@ type CreateOptions struct {
 	Parent      string
 	Actor       string // Who is creating this issue (populates created_by)
 	Ephemeral   bool   // Create as ephemeral (wisp) - not synced to git
+	RouteVia    string // Bead ID whose prefix determines the target rig for cross-rig creation
 }
 
 // UpdateOptions specifies options for updating an issue.
@@ -1079,7 +1080,26 @@ func (b *Beads) Blocked() ([]*Issue, error) {
 // Create creates a new issue and returns it.
 // If opts.Actor is empty, it defaults to the BD_ACTOR environment variable.
 // This ensures created_by is populated for issue provenance tracking.
+//
+// Cross-rig routing: when opts.RouteVia is set to a bead ID (e.g., the source
+// issue for an MR bead), the creation is routed to the rig that owns that
+// prefix. Without this, Create always targets the current BEADS_DIR, which
+// fails when the caller's beads dir differs from the target rig (gs-122).
 func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
+	// Route cross-rig creates via routes.jsonl so that bead creation targets
+	// the correct rig database (matching Show's routing behavior).
+	routeRef := opts.RouteVia
+	if routeRef == "" {
+		routeRef = opts.Parent
+	}
+	if routeRef != "" {
+		targetDir := ResolveRoutingTarget(b.getTownRoot(), routeRef, b.getResolvedBeadsDir())
+		if targetDir != b.getResolvedBeadsDir() {
+			target := NewWithBeadsDir(filepath.Dir(targetDir), targetDir)
+			return target.Create(opts)
+		}
+	}
+
 	// Guard against flag-like titles (gt-e0kx5: --help garbage beads)
 	if IsFlagLikeTitle(opts.Title) {
 		return nil, fmt.Errorf("refusing to create bead: %w (got %q)", ErrFlagTitle, opts.Title)
@@ -1142,7 +1162,17 @@ func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 // CreateWithID creates an issue with a specific ID.
 // This is useful for agent beads, role beads, and other beads that need
 // deterministic IDs rather than auto-generated ones.
+//
+// Cross-rig routing: the ID's prefix determines the target rig via
+// ResolveRoutingTarget, matching Show's routing behavior (gs-122).
 func (b *Beads) CreateWithID(id string, opts CreateOptions) (*Issue, error) {
+	// Route cross-rig creates based on the explicit ID's prefix.
+	targetDir := ResolveRoutingTarget(b.getTownRoot(), id, b.getResolvedBeadsDir())
+	if targetDir != b.getResolvedBeadsDir() {
+		target := NewWithBeadsDir(filepath.Dir(targetDir), targetDir)
+		return target.CreateWithID(id, opts)
+	}
+
 	// Guard against flag-like titles (gt-e0kx5: --help garbage beads)
 	if IsFlagLikeTitle(opts.Title) {
 		return nil, fmt.Errorf("refusing to create bead: %w (got %q)", ErrFlagTitle, opts.Title)
