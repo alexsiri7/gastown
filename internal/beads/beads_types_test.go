@@ -768,13 +768,18 @@ func TestDetectPrefix(t *testing.T) {
 		}
 	})
 
-	t.Run("routed path falls back to default", func(t *testing.T) {
-		// Routed beads path: mayor/rig/.beads — filepath.Base(filepath.Dir)
-		// yields "rig", not the actual rig name. Should fall back to "gt".
+	t.Run("mayor/rig path walks up to find rig name", func(t *testing.T) {
+		// Routed beads path: <rig>/mayor/rig/.beads — filepath.Base(filepath.Dir)
+		// yields "rig", not the actual rig name. detectPrefix should walk up
+		// the path to find the actual rig name in rigs.json (gs-122).
 		townDir := t.TempDir()
 		mayorDir := filepath.Join(townDir, "mayor")
 		os.MkdirAll(mayorDir, 0755)
 		os.WriteFile(filepath.Join(mayorDir, "town.json"), []byte("{}"), 0644)
+
+		// Register "myrig" with prefix "mr" in rigs.json
+		rigsJSON := `{"rigs": {"myrig": {"beads": {"prefix": "mr"}}}}`
+		os.WriteFile(filepath.Join(mayorDir, "rigs.json"), []byte(rigsJSON), 0644)
 
 		rigDir := filepath.Join(townDir, "myrig")
 		routedDir := filepath.Join(rigDir, "mayor", "rig")
@@ -782,9 +787,30 @@ func TestDetectPrefix(t *testing.T) {
 		os.MkdirAll(beadsDir, 0755)
 
 		got := detectPrefix(beadsDir)
-		// "rig" won't be found in rigs.json → falls to "gt" default
+		// Should walk up from "rig" → "mayor" → "myrig" and find "mr" prefix
+		if got != "mr" {
+			t.Errorf("detectPrefix() for mayor/rig path = %q, want %q", got, "mr")
+		}
+	})
+
+	t.Run("mayor/rig path falls back when rig not in rigs.json", func(t *testing.T) {
+		// When the rig name is not in rigs.json, detectPrefix should fall
+		// back to "gt" default even after walking up the path.
+		townDir := t.TempDir()
+		mayorDir := filepath.Join(townDir, "mayor")
+		os.MkdirAll(mayorDir, 0755)
+		os.WriteFile(filepath.Join(mayorDir, "town.json"), []byte("{}"), 0644)
+		os.WriteFile(filepath.Join(mayorDir, "rigs.json"), []byte(`{"rigs": {}}`), 0644)
+
+		rigDir := filepath.Join(townDir, "unknownrig")
+		routedDir := filepath.Join(rigDir, "mayor", "rig")
+		beadsDir := filepath.Join(routedDir, ".beads")
+		os.MkdirAll(beadsDir, 0755)
+
+		got := detectPrefix(beadsDir)
+		// "unknownrig" not in rigs.json → falls to "gt" default
 		if got != "gt" {
-			t.Errorf("detectPrefix() for routed path = %q, want %q", got, "gt")
+			t.Errorf("detectPrefix() for unknown rig = %q, want %q", got, "gt")
 		}
 	})
 }

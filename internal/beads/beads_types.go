@@ -402,7 +402,29 @@ func detectPrefix(beadsDir string) string {
 		// base name is never a key in rigs.json (gs-a9x).
 		if rigDir != townRoot {
 			rigName := filepath.Base(rigDir)
-			if prefix := config.GetRigPrefix(townRoot, rigName); prefix != "" && prefixRe.MatchString(prefix) {
+			prefix := config.GetRigPrefix(townRoot, rigName)
+
+			// Handle <rig>/mayor/rig/.beads path structure: when the immediate
+			// parent is "rig" (or "mayor"), the actual rig name is higher in
+			// the path. Walk up to <rig>/mayor/rig → <rig>/mayor → <rig> and
+			// retry the lookup. Without this, DetectPrefix falls back to "gt"
+			// for all mayor/rig beads dirs, causing prefix mismatch (gs-122).
+			if prefix == "gt" && (rigName == "rig" || rigName == "mayor") {
+				candidate := rigDir
+				for i := 0; i < 3; i++ {
+					candidate = filepath.Dir(candidate)
+					if candidate == townRoot || candidate == "." || candidate == "/" {
+						break
+					}
+					name := filepath.Base(candidate)
+					if p := config.GetRigPrefix(townRoot, name); p != "" && p != "gt" && prefixRe.MatchString(p) {
+						prefix = p
+						break
+					}
+				}
+			}
+
+			if prefix != "" && prefixRe.MatchString(prefix) {
 				return prefix
 			}
 		}
