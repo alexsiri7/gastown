@@ -181,7 +181,7 @@ func (m *Manager) Start(foreground bool, agentOverride string, envOverrides []st
 
 	// Apply Gas Town theming
 	theme := tmux.AssignTheme(m.rig.Name)
-	_ = t.ConfigureGasTownSession(sessionID, theme, m.rig.Name, "sre", "sre")
+	_ = t.ConfigureGasTownSession(sessionID, &theme, m.rig.Name, "sre", "sre")
 
 	// Wait for Claude to start
 	if err := t.WaitForCommand(sessionID, constants.SupportedShells, constants.ClaudeStartTimeout); err != nil {
