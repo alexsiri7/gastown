@@ -1141,13 +1141,9 @@ func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 	// the prefix from the bead ID (caller-specified, authoritative). This
 	// fixes DetectPrefix misdetection for redirected beads dirs where
 	// filepath.Base of mayor/rig is "rig" — not a real rig name (gs-122).
-	// Fall back to DetectPrefix from the beads directory (gs-plz).
-	prefix := ""
+	routePrefix := ""
 	if opts.RouteVia != "" {
-		prefix = strings.TrimSuffix(ExtractPrefix(opts.RouteVia), "-")
-	}
-	if prefix == "" {
-		prefix = DetectPrefix(b.getResolvedBeadsDir())
+		routePrefix = strings.TrimSuffix(ExtractPrefix(opts.RouteVia), "-")
 	}
 
 	// Default Actor from BD_ACTOR env var if not specified
@@ -1160,11 +1156,17 @@ func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 		args = append(args, "--actor="+actor)
 	}
 
-	// Always set --prefix to prevent bd from inferring the wrong prefix.
-	// This was previously conditional on --actor (gs-plz), but prefix
-	// misdetection can happen regardless of actor state.
-	if prefix != "" {
-		args = append(args, "--prefix="+prefix)
+	// Set --prefix to prevent bd from inferring the wrong prefix.
+	// When RouteVia provides a prefix, always use it (caller explicitly
+	// wants cross-rig routing). Otherwise, only set --prefix when --actor
+	// is set to avoid triggering rig-routing in bd create for isolated
+	// test environments that lack routes.jsonl (gs-plz).
+	if routePrefix != "" {
+		args = append(args, "--prefix="+routePrefix)
+	} else if actor != "" {
+		if prefix := DetectPrefix(b.getResolvedBeadsDir()); prefix != "" {
+			args = append(args, "--prefix="+prefix)
+		}
 	}
 
 	out, err := b.run(args...)
