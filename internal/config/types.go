@@ -722,6 +722,21 @@ type RuntimeConfig struct {
 	// Produces: exec env VAR=val ... exitbox run --profile=gastown-polecat -- claude ...
 	ExecWrapper []string `json:"exec_wrapper,omitempty"`
 
+	// Type selects the agent config kind: empty or "direct" for a standard agent,
+	// "pool" for a pool that resolves to one of several agents via a strategy.
+	// Default: "" (direct agent).
+	Type string `json:"type,omitempty"`
+
+	// Strategy selects the pool resolution strategy. Only used when Type == "pool".
+	// Known values: "random". Default: "random".
+	Strategy string `json:"strategy,omitempty"`
+
+	// PoolAgents lists agent names to pick from when Type == "pool".
+	// Each name must reference another agent defined in the same agents map
+	// (or a built-in preset). Pool resolution is recursive — a pool member
+	// can itself be a pool.
+	PoolAgents []string `json:"pool_agents,omitempty"`
+
 	// ResolvedAgent is the agent name that was resolved during config lookup.
 	// Set by ResolveRoleAgentConfig / resolveAgentConfigInternal so that
 	// BuildStartupCommand can export GT_AGENT for process detection.

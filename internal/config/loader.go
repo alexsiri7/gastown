@@ -1146,6 +1146,15 @@ func resolveAgentConfigInternal(townRoot, rigPath string) *RuntimeConfig {
 	}
 
 	rc := lookupAgentConfig(agentName, townSettings, rigSettings)
+	if isPoolConfig(rc) {
+		resolved, pickedName, err := resolvePoolConfig(rc, townSettings, rigSettings, 10)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: agent %s pool resolution failed: %v, using default\n", agentName, err)
+			return DefaultRuntimeConfig()
+		}
+		resolved.ResolvedAgent = pickedName
+		return resolved
+	}
 	rc.ResolvedAgent = agentName
 	return rc
 }
@@ -1324,6 +1333,15 @@ func ResolveRoleAgentConfig(role, townRoot, rigPath string) *RuntimeConfig {
 // (e.g., "worker_agents[denali]" or "crew_agents[denali]").
 func tryResolveNamedAgent(agentName, warnPrefix string, townSettings *TownSettings, rigSettings *RigSettings) *RuntimeConfig {
 	if rc := lookupCustomAgentConfig(agentName, townSettings, rigSettings); rc != nil {
+		if isPoolConfig(rc) {
+			resolved, pickedName, err := resolvePoolConfig(rc, townSettings, rigSettings, 10)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "warning: %s=%s pool resolution failed: %v, falling back\n", warnPrefix, agentName, err)
+				return nil
+			}
+			resolved.ResolvedAgent = pickedName
+			return resolved
+		}
 		rc.ResolvedAgent = agentName
 		return rc
 	}
@@ -1332,6 +1350,15 @@ func tryResolveNamedAgent(agentName, warnPrefix string, townSettings *TownSettin
 		return nil
 	}
 	rc := lookupAgentConfig(agentName, townSettings, rigSettings)
+	if isPoolConfig(rc) {
+		resolved, pickedName, err := resolvePoolConfig(rc, townSettings, rigSettings, 10)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: %s=%s pool resolution failed: %v, falling back\n", warnPrefix, agentName, err)
+			return nil
+		}
+		resolved.ResolvedAgent = pickedName
+		return resolved
+	}
 	rc.ResolvedAgent = agentName
 	return rc
 }
@@ -1607,15 +1634,7 @@ func resolveRoleAgentConfigCore(role, townRoot, rigPath string) *RuntimeConfig {
 	// Check rig's RoleAgents first
 	if rigSettings != nil && rigSettings.RoleAgents != nil {
 		if agentName, ok := rigSettings.RoleAgents[role]; ok && agentName != "" {
-			if rc := lookupCustomAgentConfig(agentName, townSettings, rigSettings); rc != nil {
-				rc.ResolvedAgent = agentName
-				return rc
-			}
-			if err := ValidateAgentConfig(agentName, townSettings, rigSettings); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: role_agents[%s]=%s - %v, falling back to default\n", role, agentName, err)
-			} else {
-				rc := lookupAgentConfig(agentName, townSettings, rigSettings)
-				rc.ResolvedAgent = agentName
+			if rc := tryResolveNamedAgent(agentName, fmt.Sprintf("role_agents[%s]", role), townSettings, rigSettings); rc != nil {
 				return rc
 			}
 		}
@@ -1624,15 +1643,7 @@ func resolveRoleAgentConfigCore(role, townRoot, rigPath string) *RuntimeConfig {
 	// Check town's RoleAgents
 	if townSettings.RoleAgents != nil {
 		if agentName, ok := townSettings.RoleAgents[role]; ok && agentName != "" {
-			if rc := lookupCustomAgentConfig(agentName, townSettings, rigSettings); rc != nil {
-				rc.ResolvedAgent = agentName
-				return rc
-			}
-			if err := ValidateAgentConfig(agentName, townSettings, rigSettings); err != nil {
-				fmt.Fprintf(os.Stderr, "warning: role_agents[%s]=%s - %v, falling back to default\n", role, agentName, err)
-			} else {
-				rc := lookupAgentConfig(agentName, townSettings, rigSettings)
-				rc.ResolvedAgent = agentName
+			if rc := tryResolveNamedAgent(agentName, fmt.Sprintf("role_agents[%s]", role), townSettings, rigSettings); rc != nil {
 				return rc
 			}
 		}
@@ -1742,6 +1753,8 @@ func fillRuntimeDefaults(rc *RuntimeConfig) *RuntimeConfig {
 		InitialPrompt: rc.InitialPrompt,
 		PromptMode:    rc.PromptMode,
 		ResolvedAgent: rc.ResolvedAgent,
+		Type:          rc.Type,
+		Strategy:      rc.Strategy,
 	}
 
 	// Deep copy Args slice to avoid sharing backing array
@@ -1754,6 +1767,12 @@ func fillRuntimeDefaults(rc *RuntimeConfig) *RuntimeConfig {
 	if rc.ExecWrapper != nil {
 		result.ExecWrapper = make([]string, len(rc.ExecWrapper))
 		copy(result.ExecWrapper, rc.ExecWrapper)
+	}
+
+	// Deep copy PoolAgents slice
+	if rc.PoolAgents != nil {
+		result.PoolAgents = make([]string, len(rc.PoolAgents))
+		copy(result.PoolAgents, rc.PoolAgents)
 	}
 
 	// Deep copy Env map
