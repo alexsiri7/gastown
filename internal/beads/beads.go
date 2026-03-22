@@ -283,7 +283,11 @@ type CreateOptions struct {
 	Parent      string
 	Actor       string // Who is creating this issue (populates created_by)
 	Ephemeral   bool   // Create as ephemeral (wisp) - not synced to git
-	RouteVia    string // Bead ID whose prefix determines the target rig for cross-rig creation
+	RouteVia    string // Bead ID whose prefix determines the target rig for cross-rig
+	// creation AND the --prefix flag for bd create. When set, Create() routes to
+	// the correct rig's beads directory via ResolveRoutingTarget, and uses the
+	// extracted prefix instead of DetectPrefix (which can return the wrong prefix
+	// for redirected beads dirs like mayor/rig/.beads). See gs-122.
 }
 
 // UpdateOptions specifies options for updating an issue.
@@ -1087,7 +1091,9 @@ func (b *Beads) Blocked() ([]*Issue, error) {
 // fails when the caller's beads dir differs from the target rig (gs-122).
 func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 	// Route cross-rig creates via routes.jsonl so that bead creation targets
-	// the correct rig database (matching Show's routing behavior).
+	// the correct rig database (matching Show's routing behavior). RouteVia
+	// also determines the --prefix flag, fixing DetectPrefix misdetection for
+	// redirected beads dirs (e.g., mayor/rig/.beads returns "gt" not "gs").
 	routeRef := opts.RouteVia
 	if routeRef == "" {
 		routeRef = opts.Parent
@@ -1130,6 +1136,20 @@ func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 	if opts.Ephemeral {
 		args = append(args, "--ephemeral")
 	}
+
+	// Determine the prefix for the new bead. When RouteVia is set, extract
+	// the prefix from the bead ID (caller-specified, authoritative). This
+	// fixes DetectPrefix misdetection for redirected beads dirs where
+	// filepath.Base of mayor/rig is "rig" — not a real rig name (gs-122).
+	// Fall back to DetectPrefix from the beads directory (gs-plz).
+	prefix := ""
+	if opts.RouteVia != "" {
+		prefix = strings.TrimSuffix(ExtractPrefix(opts.RouteVia), "-")
+	}
+	if prefix == "" {
+		prefix = DetectPrefix(b.getResolvedBeadsDir())
+	}
+
 	// Default Actor from BD_ACTOR env var if not specified
 	// Uses getActor() to respect isolated mode (tests)
 	actor := opts.Actor
@@ -1138,12 +1158,13 @@ func (b *Beads) Create(opts CreateOptions) (*Issue, error) {
 	}
 	if actor != "" {
 		args = append(args, "--actor="+actor)
-		// When --actor is set, bd may infer the prefix from the actor's rig
-		// instead of the target database. Explicitly set --prefix to match the
-		// target beads directory to prevent prefix/database mismatch (gs-plz).
-		if prefix := DetectPrefix(b.getResolvedBeadsDir()); prefix != "" {
-			args = append(args, "--prefix="+prefix)
-		}
+	}
+
+	// Always set --prefix to prevent bd from inferring the wrong prefix.
+	// This was previously conditional on --actor (gs-plz), but prefix
+	// misdetection can happen regardless of actor state.
+	if prefix != "" {
+		args = append(args, "--prefix="+prefix)
 	}
 
 	out, err := b.run(args...)
