@@ -670,7 +670,25 @@ type CrewConfig struct {
 // RuntimeConfig represents LLM runtime configuration for agent sessions.
 // This allows switching between different LLM backends (claude, aider, etc.)
 // without modifying startup code.
+//
+// When Type is "pool", the entry represents a pool of agents rather than a
+// direct agent configuration. The pool resolves to a concrete agent using
+// the configured Strategy before session launch. See PoolAgents and Strategy.
 type RuntimeConfig struct {
+	// Type distinguishes between direct agent configs and pool configs.
+	// Empty or "agent" means a direct agent config (default, backwards compatible).
+	// "pool" means this entry is an agent pool — see PoolAgents and Strategy.
+	Type string `json:"type,omitempty"`
+
+	// PoolAgents lists the agent names in this pool. Only used when Type is "pool".
+	// Each name must reference another agent defined in the same agents map,
+	// a built-in preset, or another pool (recursive resolution is supported).
+	PoolAgents []string `json:"pool_agents,omitempty"`
+
+	// Strategy selects the pool resolution strategy. Only used when Type is "pool".
+	// Default: "random". See RegisterPoolStrategy for available strategies.
+	Strategy string `json:"strategy,omitempty"`
+
 	// Provider selects runtime-specific defaults and integration behavior.
 	// Known values: "claude", "codex", "generic". Default: "claude".
 	Provider string `json:"provider,omitempty"`

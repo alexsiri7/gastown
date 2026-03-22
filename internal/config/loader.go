@@ -1264,6 +1264,27 @@ func ValidateAgentConfig(agentName string, townSettings *TownSettings, rigSettin
 		return fmt.Errorf("agent %q not found in config or built-in presets", agentName)
 	}
 
+	// Pool configs are validated by checking all member agents exist
+	if IsPoolConfig(rc) {
+		if len(rc.PoolAgents) == 0 {
+			return fmt.Errorf("pool %q has no agents", agentName)
+		}
+		strategyName := rc.Strategy
+		if strategyName == "" {
+			strategyName = "random"
+		}
+		if GetPoolStrategy(strategyName) == nil {
+			return fmt.Errorf("pool %q uses unknown strategy %q", agentName, strategyName)
+		}
+		for _, memberName := range rc.PoolAgents {
+			memberRC := lookupAgentConfigIfExists(memberName, townSettings, rigSettings)
+			if memberRC == nil {
+				return fmt.Errorf("pool %q references unknown agent %q", agentName, memberName)
+			}
+		}
+		return nil
+	}
+
 	// Check if binary exists on system
 	if _, err := exec.LookPath(rc.Command); err != nil {
 		return fmt.Errorf("agent %q binary %q not found in PATH", agentName, rc.Command)
@@ -1402,6 +1423,9 @@ func IsResolvedAgentClaude(rc *RuntimeConfig) bool {
 // is checked: bare "claude", a path ending in "/claude" (or "\claude" on Windows),
 // or an empty command (the default) all indicate Claude.
 func isClaudeAgent(rc *RuntimeConfig) bool {
+	if IsPoolConfig(rc) {
+		return false // Pools are not directly a Claude agent
+	}
 	if rc.Provider != "" {
 		return rc.Provider == "claude"
 	}
@@ -1593,6 +1617,7 @@ func resolveRoleAgentConfigCore(role, townRoot, rigPath string) *RuntimeConfig {
 	if rigSettings != nil && rigSettings.RoleAgents != nil {
 		if agentName, ok := rigSettings.RoleAgents[role]; ok && agentName != "" {
 			if rc := lookupCustomAgentConfig(agentName, townSettings, rigSettings); rc != nil {
+				rc, agentName = resolveIfPool(rc, agentName, townSettings, rigSettings)
 				rc.ResolvedAgent = agentName
 				return rc
 			}
@@ -1600,6 +1625,7 @@ func resolveRoleAgentConfigCore(role, townRoot, rigPath string) *RuntimeConfig {
 				fmt.Fprintf(os.Stderr, "warning: role_agents[%s]=%s - %v, falling back to default\n", role, agentName, err)
 			} else {
 				rc := lookupAgentConfig(agentName, townSettings, rigSettings)
+				rc, agentName = resolveIfPool(rc, agentName, townSettings, rigSettings)
 				rc.ResolvedAgent = agentName
 				return rc
 			}
@@ -1610,6 +1636,7 @@ func resolveRoleAgentConfigCore(role, townRoot, rigPath string) *RuntimeConfig {
 	if townSettings.RoleAgents != nil {
 		if agentName, ok := townSettings.RoleAgents[role]; ok && agentName != "" {
 			if rc := lookupCustomAgentConfig(agentName, townSettings, rigSettings); rc != nil {
+				rc, agentName = resolveIfPool(rc, agentName, townSettings, rigSettings)
 				rc.ResolvedAgent = agentName
 				return rc
 			}
@@ -1617,6 +1644,7 @@ func resolveRoleAgentConfigCore(role, townRoot, rigPath string) *RuntimeConfig {
 				fmt.Fprintf(os.Stderr, "warning: role_agents[%s]=%s - %v, falling back to default\n", role, agentName, err)
 			} else {
 				rc := lookupAgentConfig(agentName, townSettings, rigSettings)
+				rc, agentName = resolveIfPool(rc, agentName, townSettings, rigSettings)
 				rc.ResolvedAgent = agentName
 				return rc
 			}
@@ -1721,6 +1749,27 @@ func lookupCustomAgentConfig(name string, townSettings *TownSettings, rigSetting
 	return nil
 }
 
+// resolveIfPool checks if a RuntimeConfig is a pool and resolves it to a concrete
+// agent. If rc is not a pool, it is returned unchanged. The agentName is updated
+// to reflect the picked agent when pool resolution occurs.
+func resolveIfPool(rc *RuntimeConfig, agentName string, townSettings *TownSettings, rigSettings *RigSettings) (*RuntimeConfig, string) {
+	if !IsPoolConfig(rc) {
+		return rc, agentName
+	}
+
+	lookup := func(name string) *RuntimeConfig {
+		return lookupAgentConfigIfExists(name, townSettings, rigSettings)
+	}
+
+	resolved, picked, err := ResolvePool(rc, lookup)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: pool %q resolution failed: %v, falling back to default\n", agentName, err)
+		return DefaultRuntimeConfig(), "claude"
+	}
+
+	return resolved, picked
+}
+
 // fillRuntimeDefaults fills in default values for empty RuntimeConfig fields.
 // It creates a deep copy to prevent mutation of the original config.
 //
@@ -1734,6 +1783,20 @@ func lookupCustomAgentConfig(name string, townSettings *TownSettings, rigSetting
 func fillRuntimeDefaults(rc *RuntimeConfig) *RuntimeConfig {
 	if rc == nil {
 		return DefaultRuntimeConfig()
+	}
+
+	// Pool configs are returned as-is (deep copy pool-specific fields only).
+	// They will be resolved to a concrete agent before session launch.
+	if IsPoolConfig(rc) {
+		result := &RuntimeConfig{
+			Type:     rc.Type,
+			Strategy: rc.Strategy,
+		}
+		if rc.PoolAgents != nil {
+			result.PoolAgents = make([]string, len(rc.PoolAgents))
+			copy(result.PoolAgents, rc.PoolAgents)
+		}
+		return result
 	}
 
 	// Create result with scalar fields (strings are immutable in Go)
