@@ -778,6 +778,13 @@ func runRigList(cmd *cobra.Command, args []string) error {
 		refinerySession := session.RefinerySessionName(prefix)
 		witnessRunning, _ := t.HasSession(witnessSession)
 		refineryRunning, _ := t.HasSession(refinerySession)
+		// Dead panes (remain-on-exit) are not truly running
+		if witnessRunning && t.IsPaneDead(witnessSession) {
+			witnessRunning = false
+		}
+		if refineryRunning && t.IsPaneDead(refinerySession) {
+			refineryRunning = false
+		}
 
 		witnessStatus := "stopped"
 		if witnessRunning {
@@ -1341,15 +1348,15 @@ func runResetStale(bd *beads.Beads, dryRun bool) error {
 			continue // Couldn't parse assignee
 		}
 
-		// Check if session exists
+		// Check if session exists and is alive (not just a dead pane)
 		hasSession, err := t.HasSession(sessionName)
 		if err != nil {
 			// tmux error, skip this one
 			continue
 		}
 
-		if hasSession {
-			continue // Session exists, not stale
+		if hasSession && !t.IsPaneDead(sessionName) {
+			continue // Session alive, not stale
 		}
 
 		// For crew (persistent identities), only reset if explicitly checking sessions
@@ -1482,6 +1489,10 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 	// Check actual tmux session, not state file (may be stale)
 	witnessSession := session.WitnessSessionName(session.PrefixFor(rigName))
 	witnessRunning, _ := t.HasSession(witnessSession)
+	if witnessRunning && t.IsPaneDead(witnessSession) {
+		_ = t.KillSession(witnessSession)
+		witnessRunning = false
+	}
 	if witnessRunning {
 		skipped = append(skipped, "witness (already running)")
 	} else {
@@ -1502,6 +1513,10 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 	// Check actual tmux session, not state file (may be stale)
 	refinerySession := session.RefinerySessionName(session.PrefixFor(rigName))
 	refineryRunning, _ := t.HasSession(refinerySession)
+	if refineryRunning && t.IsPaneDead(refinerySession) {
+		_ = t.KillSession(refinerySession)
+		refineryRunning = false
+	}
 	if refineryRunning {
 		skipped = append(skipped, "refinery (already running)")
 	} else {
@@ -1516,6 +1531,10 @@ func runRigBoot(cmd *cobra.Command, args []string) error {
 	// 3. Start the SRE
 	sreSession := session.SRESessionName(session.PrefixFor(rigName))
 	sreRunning, _ := t.HasSession(sreSession)
+	if sreRunning && t.IsPaneDead(sreSession) {
+		_ = t.KillSession(sreSession)
+		sreRunning = false
+	}
 	if sreRunning {
 		skipped = append(skipped, "sre (already running)")
 	} else {
@@ -1588,6 +1607,10 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 		// 1. Start the witness
 		witnessSession := session.WitnessSessionName(session.PrefixFor(rigName))
 		witnessRunning, _ := t.HasSession(witnessSession)
+		if witnessRunning && t.IsPaneDead(witnessSession) {
+			_ = t.KillSession(witnessSession)
+			witnessRunning = false
+		}
 		if witnessRunning {
 			skipped = append(skipped, "witness")
 		} else {
@@ -1608,6 +1631,10 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 		// 2. Start the refinery
 		refinerySession := session.RefinerySessionName(session.PrefixFor(rigName))
 		refineryRunning, _ := t.HasSession(refinerySession)
+		if refineryRunning && t.IsPaneDead(refinerySession) {
+			_ = t.KillSession(refinerySession)
+			refineryRunning = false
+		}
 		if refineryRunning {
 			skipped = append(skipped, "refinery")
 		} else {
@@ -1624,6 +1651,10 @@ func runRigStart(cmd *cobra.Command, args []string) error {
 		// 3. Start the SRE
 		sreSession := session.SRESessionName(session.PrefixFor(rigName))
 		sreRunning, _ := t.HasSession(sreSession)
+		if sreRunning && t.IsPaneDead(sreSession) {
+			_ = t.KillSession(sreSession)
+			sreRunning = false
+		}
 		if sreRunning {
 			skipped = append(skipped, "sre")
 		} else {
@@ -1871,9 +1902,11 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 		for _, p := range polecats {
 			sessionName := session.PolecatSessionName(session.PrefixFor(rigName), p.Name)
 			hasSession, _ := t.HasSession(sessionName)
+			// A session with a dead pane (remain-on-exit) is not truly running
+			sessionAlive := hasSession && !t.IsPaneDead(sessionName)
 
 			sessionIcon := style.Dim.Render("○")
-			if hasSession {
+			if sessionAlive {
 				sessionIcon = style.Success.Render("●")
 			}
 
@@ -1882,9 +1915,9 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 			// If session is running but beads says done, the polecat is still alive.
 			// If session is dead but beads says working, the polecat is actually done.
 			displayState := p.State
-			if hasSession && displayState == polecat.StateDone {
+			if sessionAlive && displayState == polecat.StateDone {
 				displayState = polecat.StateWorking
-			} else if !hasSession && displayState == polecat.StateWorking {
+			} else if !sessionAlive && displayState == polecat.StateWorking {
 				displayState = polecat.StateDone
 			}
 
@@ -1909,9 +1942,10 @@ func runRigStatus(cmd *cobra.Command, args []string) error {
 		for _, w := range crewWorkers {
 			sessionName := crewSessionName(rigName, w.Name)
 			hasSession, _ := t.HasSession(sessionName)
+			sessionAlive := hasSession && !t.IsPaneDead(sessionName)
 
 			sessionIcon := style.Dim.Render("○")
-			if hasSession {
+			if sessionAlive {
 				sessionIcon = style.Success.Render("●")
 			}
 
@@ -2139,6 +2173,10 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 		// 1. Start the witness
 		witnessSession := session.WitnessSessionName(session.PrefixFor(rigName))
 		witnessRunning, _ := t.HasSession(witnessSession)
+		if witnessRunning && t.IsPaneDead(witnessSession) {
+			_ = t.KillSession(witnessSession)
+			witnessRunning = false
+		}
 		if witnessRunning {
 			skipped = append(skipped, "witness")
 		} else {
@@ -2158,6 +2196,10 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 		// 2. Start the refinery
 		refinerySession := session.RefinerySessionName(session.PrefixFor(rigName))
 		refineryRunning, _ := t.HasSession(refinerySession)
+		if refineryRunning && t.IsPaneDead(refinerySession) {
+			_ = t.KillSession(refinerySession)
+			refineryRunning = false
+		}
 		if refineryRunning {
 			skipped = append(skipped, "refinery")
 		} else {
@@ -2173,6 +2215,10 @@ func runRigRestart(cmd *cobra.Command, args []string) error {
 		// 3. Start the SRE
 		sreSession := session.SRESessionName(session.PrefixFor(rigName))
 		sreRunning, _ := t.HasSession(sreSession)
+		if sreRunning && t.IsPaneDead(sreSession) {
+			_ = t.KillSession(sreSession)
+			sreRunning = false
+		}
 		if sreRunning {
 			skipped = append(skipped, "sre")
 		} else {
